@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 	"errors"
-	"git.weirdcat.su/automapper-gen/example/db"
+	"git.weirdcat.su/weirdcat/automapper-gen/example/db"
 )
 
 // Converter type for type-safe conversions
