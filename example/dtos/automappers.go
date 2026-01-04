@@ -3,9 +3,9 @@
 package dtos
 
 import (
+	"errors"
 	"fmt"
 	"time"
-	"errors"
 	"git.weirdcat.su/weirdcat/automapper-gen/example/db"
 )
 

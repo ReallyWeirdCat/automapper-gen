@@ -73,7 +73,7 @@ import (
 	"fmt"
 	"time"
 	"errors"
-	"git.weirdcat.su/automapper-gen/example/db"
+	"git.weirdcat.su/weirdcat/automapper-gen/example/db"
 )
 
 // Converter type for type-safe conversions
@@ -129,5 +129,5 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 
 	return nil
 }
-
 ```
+The function `(d *UserDTO) MapFromUserDB(src *db.UserDB) error` can now be used to map contents from a `UserDB` model directly into an instance of `UserDTO`. Cheers!
