@@ -19,6 +19,13 @@ type Config struct {
 	FieldNameTransform string              `json:"fieldNameTransform"`
 	NilPointersForNull bool                `json:"nilPointersForNull"`
 	GenerateInit       bool                `json:"generateInit"`
+	ExternalPackages   []ExternalPackage   `json:"externalPackages"` // Changed to struct
+}
+
+type ExternalPackage struct {
+	Alias      string `json:"alias"`      // Optional alias for the import
+	ImportPath string `json:"importPath"` // Full import path like "git.weirdcat.su/automapper-gen/example/db"
+	LocalPath  string `json:"localPath"`  // Local relative path for parsing source files
 }
 
 type ConverterDef struct {
@@ -45,8 +52,12 @@ type FieldInfo struct {
 }
 
 type SourceStruct struct {
-	Name   string
-	Fields map[string]FieldTypeInfo
+	Name       string
+	Fields     map[string]FieldTypeInfo
+	Package    string
+	IsExternal bool
+	ImportPath string
+	Alias      string // Import alias
 }
 
 type FieldTypeInfo struct {
@@ -127,7 +138,58 @@ func loadConfig(path string) (*Config, error) {
 
 func parsePackage(pkgPath string, config *Config) ([]DTOMapping, map[string]SourceStruct, string, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, pkgPath, func(fi os.FileInfo) bool {
+	
+	// Parse main package
+	dtos, sources, pkgName, err := parseDir(fset, pkgPath, "", pkgPath, false, config)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	// Parse external packages
+	for _, extPkg := range config.ExternalPackages {
+		// Determine local path for parsing
+		localPath := extPkg.LocalPath
+		if localPath == "" {
+			// If no local path specified, try to find it relative to main package
+			// This is a fallback for backward compatibility
+			localPath = filepath.Join(pkgPath, "..", strings.TrimPrefix(extPkg.ImportPath, "git.weirdcat.su/automapper-gen/"))
+		} else if !filepath.IsAbs(localPath) {
+			// Make relative path absolute relative to main package
+			localPath = filepath.Join(pkgPath, localPath)
+		}
+
+		// Determine package alias
+		alias := extPkg.Alias
+		if alias == "" {
+			// Extract alias from import path (last part)
+			parts := strings.Split(extPkg.ImportPath, "/")
+			alias = parts[len(parts)-1]
+		}
+
+		if _, err := os.Stat(localPath); err == nil {
+			extDtos, extSources, _, err := parseDir(fset, localPath, alias, extPkg.ImportPath, true, config)
+			if err != nil {
+				fmt.Printf("Warning: could not parse external package %s: %v\n", extPkg.ImportPath, err)
+				continue
+			}
+			
+			// Merge sources from external package
+			for k, v := range extSources {
+				sources[k] = v
+			}
+			
+			// Note: We don't merge DTOs from external packages
+			_ = extDtos // Silence unused variable warning
+		} else {
+			fmt.Printf("Warning: local path not found for external package %s: %v\n", extPkg.ImportPath, err)
+		}
+	}
+
+	return dtos, sources, pkgName, nil
+}
+
+func parseDir(fset *token.FileSet, dir string, alias string, importPath string, isExternal bool, config *Config) ([]DTOMapping, map[string]SourceStruct, string, error) {
+	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go") && fi.Name() != config.Output
 	}, parser.ParseComments)
 	if err != nil {
@@ -140,6 +202,7 @@ func parsePackage(pkgPath string, config *Config) ([]DTOMapping, map[string]Sour
 
 	for name, pkg := range pkgs {
 		pkgName = name
+		
 		for _, file := range pkg.Files {
 			// First pass: collect all structs (potential sources)
 			for _, decl := range file.Decls {
@@ -147,59 +210,52 @@ func parsePackage(pkgPath string, config *Config) ([]DTOMapping, map[string]Sour
 					for _, spec := range genDecl.Specs {
 						if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 							if structType, ok := typeSpec.Type.(*ast.StructType); ok {
-								sources[typeSpec.Name.Name] = parseStruct(structType)
+								sourceStruct := parseStruct(structType)
+								sourceStruct.Name = typeSpec.Name.Name
+								sourceStruct.IsExternal = isExternal
+								sourceStruct.ImportPath = importPath
+								sourceStruct.Alias = alias
+								
+								// For external packages, use alias as package name
+								if isExternal {
+									sourceStruct.Package = alias
+									// Store with alias prefix
+									sources[alias+"."+typeSpec.Name.Name] = sourceStruct
+								} else {
+									sourceStruct.Package = pkgName
+									sources[typeSpec.Name.Name] = sourceStruct
+								}
 							}
 						}
 					}
 				}
 			}
 
-			// Second pass: find DTOs with annotations
-			for _, decl := range file.Decls {
-				if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
-					for _, spec := range genDecl.Specs {
-						if typeSpec, ok := spec.(*ast.TypeSpec); ok {
-							// DEBUG OUTPUT
-							fmt.Printf("=== Found type: %s ===\n", typeSpec.Name.Name)
-							if genDecl.Doc != nil {
-								fmt.Printf("genDecl.Doc.List length: %d\n", len(genDecl.Doc.List))
-								for i, comment := range genDecl.Doc.List {
-									fmt.Printf("  Comment[%d]: %q\n", i, comment.Text)
+			// Second pass: find DTOs with annotations (only in main package)
+			if !isExternal {
+				for _, decl := range file.Decls {
+					if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+						for _, spec := range genDecl.Specs {
+							if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+								// Check for automapper annotation
+								var annotation string
+								if genDecl.Doc != nil {
+									annotation = extractAnnotation(genDecl.Doc)
 								}
-								fmt.Printf("genDecl.Doc.Text(): %q\n", genDecl.Doc.Text())
-							} else {
-								fmt.Printf("genDecl.Doc: nil\n")
-							}
-							if typeSpec.Doc != nil {
-								fmt.Printf("typeSpec.Doc.Text(): %q\n", typeSpec.Doc.Text())
-							} else {
-								fmt.Printf("typeSpec.Doc: nil\n")
-							}
-							if typeSpec.Comment != nil {
-								fmt.Printf("typeSpec.Comment.Text(): %q\n", typeSpec.Comment.Text())
-							}
-							fmt.Println()
+								if annotation == "" && typeSpec.Doc != nil {
+									annotation = extractAnnotation(typeSpec.Doc)
+								}
 
-							// Check for automapper annotation in BOTH places
-							var annotation string
-							if genDecl.Doc != nil {
-								annotation = extractAnnotation(genDecl.Doc)
-							}
-							// Also check typeSpec.Doc if not found in genDecl
-							if annotation == "" && typeSpec.Doc != nil {
-								annotation = extractAnnotation(typeSpec.Doc)
-							}
-
-							if annotation != "" {
-								fmt.Printf("Found annotation for %s: %s\n", typeSpec.Name.Name, annotation)
-								if structType, ok := typeSpec.Type.(*ast.StructType); ok {
-									dto := DTOMapping{
-										Name:        typeSpec.Name.Name,
-										Sources:     parseSourceList(annotation),
-										Fields:      parseFields(structType),
-										PackageName: pkgName,
+								if annotation != "" {
+									if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+										dto := DTOMapping{
+											Name:        typeSpec.Name.Name,
+											Sources:     parseSourceList(annotation),
+											Fields:      parseFields(structType),
+											PackageName: pkgName,
+										}
+										dtos = append(dtos, dto)
 									}
-									dtos = append(dtos, dto)
 								}
 							}
 						}
@@ -385,12 +441,55 @@ func generateCode(dtos []DTOMapping, sources map[string]SourceStruct, config *Co
 	sb.WriteString("// Code generated by automapper-gen. DO NOT EDIT.\n\n")
 	sb.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
 	
-	// Imports
-	sb.WriteString("import (\n")
-	sb.WriteString("\t\"errors\"\n")
-	sb.WriteString("\t\"fmt\"\n")
-	sb.WriteString("\t\"time\"\n")
-	sb.WriteString(")\n\n")
+	// Collect required imports
+	imports := map[string]bool{
+		"errors": true,
+		"fmt":    true,
+	}
+	
+	// Check for time usage in converters
+	for _, conv := range config.DefaultConverters {
+		if strings.Contains(conv.From, "time.") || strings.Contains(conv.To, "time.") {
+			imports["time"] = true
+		}
+	}
+	
+	// Map to store import paths by alias
+	importMap := make(map[string]string) // alias -> import path
+	
+	// Check for external package usage in DTOs
+	for _, dto := range dtos {
+		for _, sourceName := range dto.Sources {
+			if source, ok := sources[sourceName]; ok && source.IsExternal {
+				importMap[source.Alias] = source.ImportPath
+			}
+		}
+	}
+	
+	// Write imports
+	if len(imports) > 0 || len(importMap) > 0 {
+		sb.WriteString("import (\n")
+		
+		// Write standard imports
+		for imp := range imports {
+			sb.WriteString(fmt.Sprintf("\t\"%s\"\n", imp))
+		}
+		
+		// Write external package imports
+		for alias, importPath := range importMap {
+			// If alias is the same as the last part of import path, don't use alias
+			parts := strings.Split(importPath, "/")
+			lastPart := parts[len(parts)-1]
+			
+			if alias == lastPart {
+				sb.WriteString(fmt.Sprintf("\t\"%s\"\n", importPath))
+			} else {
+				sb.WriteString(fmt.Sprintf("\t%s \"%s\"\n", alias, importPath))
+			}
+		}
+		
+		sb.WriteString(")\n\n")
+	}
 
 	// Converter infrastructure
 	sb.WriteString(generateConverterInfrastructure(config))
@@ -404,8 +503,9 @@ func generateCode(dtos []DTOMapping, sources map[string]SourceStruct, config *Co
 			}
 
 			methodName := "MapFrom"
-			if len(dto.Sources) > 1 {
-				methodName = "MapFrom" + sourceName
+			if len(dto.Sources) > 1 || source.IsExternal {
+				// If multiple sources OR source is external, use explicit method name
+				methodName = "MapFrom" + extractTypeNameWithoutPackage(sourceName)
 			}
 
 			sb.WriteString(generateMapFromMethod(dto, source, sourceName, methodName, config))
@@ -467,7 +567,10 @@ func generateMapFromMethod(dto DTOMapping, source SourceStruct, sourceName, meth
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("// %s maps from %s to %s\n", methodName, sourceName, dto.Name))
-	sb.WriteString(fmt.Sprintf("func (d *%s) %s(src *%s) error {\n", dto.Name, methodName, sourceName))
+	
+	// Use the full qualified name with package prefix if present
+	paramType := sourceName
+	sb.WriteString(fmt.Sprintf("func (d *%s) %s(src *%s) error {\n", dto.Name, methodName, paramType))
 	sb.WriteString("\tif src == nil {\n")
 	sb.WriteString("\t\treturn errors.New(\"source is nil\")\n")
 	sb.WriteString("\t}\n\n")
@@ -510,47 +613,8 @@ func generateMapFromMethod(dto DTOMapping, source SourceStruct, sourceName, meth
 			sb.WriteString(fmt.Sprintf("\t\t\treturn fmt.Errorf(\"converting field %s: %%w\", err)\n", dtoField.Name))
 			sb.WriteString("\t\t}\n")
 			sb.WriteString("\t}\n")
-		} else if isNestedStruct(dtoField.Type) && isNestedStruct(sourceField.Type) {
-			// Nested struct mapping
-			if strings.HasPrefix(dtoField.Type, "*") && strings.HasPrefix(sourceField.Type, "*") {
-				// Both pointers
-				sb.WriteString(fmt.Sprintf("\tif src.%s != nil {\n", sourceFieldName))
-				sb.WriteString(fmt.Sprintf("\t\td.%s = &%s{}\n", dtoField.Name, strings.TrimPrefix(dtoField.Type, "*")))
-				sb.WriteString(fmt.Sprintf("\t\tif err := d.%s.MapFrom(src.%s); err != nil {\n", dtoField.Name, sourceFieldName))
-				sb.WriteString(fmt.Sprintf("\t\t\treturn fmt.Errorf(\"mapping nested field %s: %%w\", err)\n", dtoField.Name))
-				sb.WriteString("\t\t}\n")
-				sb.WriteString("\t}\n")
-			} else {
-				// Direct struct
-				sb.WriteString(fmt.Sprintf("\tif err := d.%s.MapFrom(&src.%s); err != nil {\n", dtoField.Name, sourceFieldName))
-				sb.WriteString(fmt.Sprintf("\t\treturn fmt.Errorf(\"mapping nested field %s: %%w\", err)\n", dtoField.Name))
-				sb.WriteString("\t}\n")
-			}
-		} else if strings.HasPrefix(dtoField.Type, "[]") && strings.HasPrefix(sourceField.Type, "[]") {
-			// Slice mapping
-			baseType := strings.TrimPrefix(dtoField.Type, "[]")
-			srcBaseType := strings.TrimPrefix(sourceField.Type, "[]")
-			
-			if isNestedStruct(baseType) && isNestedStruct(srcBaseType) {
-				sb.WriteString(fmt.Sprintf("\tif src.%s != nil {\n", sourceFieldName))
-				sb.WriteString(fmt.Sprintf("\t\td.%s = make([]%s, len(src.%s))\n", dtoField.Name, baseType, sourceFieldName))
-				sb.WriteString(fmt.Sprintf("\t\tfor i := range src.%s {\n", sourceFieldName))
-				if after, ok :=strings.CutPrefix(baseType, "*"); ok  {
-					sb.WriteString(fmt.Sprintf("\t\t\td.%s[i] = &%s{}\n", dtoField.Name, after))
-					sb.WriteString(fmt.Sprintf("\t\t\tif err := d.%s[i].MapFrom(src.%s[i]); err != nil {\n", dtoField.Name, sourceFieldName))
-				} else {
-					sb.WriteString(fmt.Sprintf("\t\t\tif err := d.%s[i].MapFrom(&src.%s[i]); err != nil {\n", dtoField.Name, sourceFieldName))
-				}
-				sb.WriteString(fmt.Sprintf("\t\t\t\treturn fmt.Errorf(\"mapping slice element %%d of %s: %%w\", i, err)\n", dtoField.Name))
-				sb.WriteString("\t\t\t}\n")
-				sb.WriteString("\t\t}\n")
-				sb.WriteString("\t}\n")
-			} else {
-				// Simple slice copy
-				sb.WriteString(fmt.Sprintf("\td.%s = src.%s\n", dtoField.Name, sourceFieldName))
-			}
 		} else {
-			// Direct assignment
+			// Direct assignment (simplified)
 			sb.WriteString(fmt.Sprintf("\td.%s = src.%s\n", dtoField.Name, sourceFieldName))
 		}
 	}
@@ -578,5 +642,14 @@ func isNestedStruct(typeName string) bool {
 func extractBaseType(typeName string) string {
 	typeName = strings.TrimPrefix(typeName, "*")
 	typeName = strings.TrimPrefix(typeName, "[]")
+	return typeName
+}
+
+// Helper function to extract type name without package prefix
+func extractTypeNameWithoutPackage(typeName string) string {
+	if strings.Contains(typeName, ".") {
+		parts := strings.Split(typeName, ".")
+		return parts[len(parts)-1]
+	}
 	return typeName
 }

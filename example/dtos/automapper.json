@@ -1,0 +1,20 @@
+{
+  "package": "dtos",
+  "output": "automappers.go",
+  "defaultConverters": [
+    {
+      "from": "time.Time",
+      "to": "string",
+      "name": "TimeToString",
+      "function": "TimeToJSString"
+    }
+  ],
+  "generateInit": true,
+  "externalPackages": [
+    {
+      "alias": "db",
+      "importPath": "git.weirdcat.su/automapper-gen/example/db",
+      "localPath": "../db"
+    }
+  ]
+}
