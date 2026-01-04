@@ -1,3 +1,5 @@
+**⚠️Warning!** This project is in a very early stage of development and is primarily a proof of concept for an application I'm making. It works, but it's raw, unorganized, lacks testing, and most of all is AI-generated to the core. Not recommended for production use.
+
 # Automapper Generator
 
 A CLI ulitity that generates reflection-free Go code for mapping structs with type conversion support.
