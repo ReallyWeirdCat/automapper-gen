@@ -30,15 +30,13 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
 - [Examples](#examples)
 - [How It Works](#how-it-works)
 
-📖 **[Complete Guide to Remote Modules](REMOTE_MODULES.md)**
-
 ## Installation
 
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/automapper-gen.git
+git clone https://git.weirdcat.su/weirdcat/automapper-gen.git
 cd automapper-gen
 
 # Build and install
@@ -51,7 +49,7 @@ make build
 ### Using Go Install
 
 ```bash
-go install github.com/yourusername/automapper-gen/cmd/automapper-gen@latest
+go install git.weirdcat.su/weirdcat/automapper-gen/cmd/automapper-gen@latest
 ```
 
 ## Quick Start
