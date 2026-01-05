@@ -25,7 +25,6 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
 - [Examples](#examples)
 - [Development](#development)
 - [How It Works](#how-it-works)
-- [Contributing](#contributing)
 
 ## Installation
 
