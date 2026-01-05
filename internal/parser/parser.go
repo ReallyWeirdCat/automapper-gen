@@ -25,32 +25,46 @@ func ParsePackage(pkgPath string, cfg *config.Config) ([]types.DTOMapping, map[s
 
 	// Parse external packages
 	for _, extPkg := range cfg.ExternalPackages {
-		localPath := extPkg.LocalPath
-		if !filepath.IsAbs(localPath) {
-			localPath = filepath.Join(pkgPath, localPath)
-		}
-
 		alias := extPkg.Alias
 		if alias == "" {
 			parts := strings.Split(extPkg.ImportPath, "/")
 			alias = parts[len(parts)-1]
 		}
 
-		if _, err := os.Stat(localPath); err == nil {
-			extDtos, extSources, _, err := parseDir(fset, localPath, alias, extPkg.ImportPath, true, cfg)
-			if err != nil {
-				fmt.Printf("Warning: could not parse external package %s: %v\n", extPkg.ImportPath, err)
-				continue
+		var extSources map[string]types.SourceStruct
+		var parseErr error
+
+		// Try local path first if provided (for development)
+		if extPkg.LocalPath != "" {
+			localPath := extPkg.LocalPath
+			if !filepath.IsAbs(localPath) {
+				localPath = filepath.Join(pkgPath, localPath)
 			}
 
-			for k, v := range extSources {
-				sources[k] = v
+			if _, err := os.Stat(localPath); err == nil {
+				fmt.Printf("Loading external package %s from local path: %s\n", extPkg.ImportPath, localPath)
+				_, extSources, _, parseErr = parseDir(fset, localPath, alias, extPkg.ImportPath, true, cfg)
+			} else {
+				fmt.Printf("Local path not found for %s, loading from module cache\n", extPkg.ImportPath)
 			}
-
-			_ = extDtos
-		} else {
-			fmt.Printf("Warning: local path not found for external package %s: %v\n", extPkg.ImportPath, err)
 		}
+
+		// Load from module cache if local path not available or failed
+		if extPkg.LocalPath == "" || parseErr != nil {
+			fmt.Printf("Loading external package %s from module cache\n", extPkg.ImportPath)
+			extSources, parseErr = LoadExternalPackage(extPkg.ImportPath, alias)
+		}
+
+		if parseErr != nil {
+			return nil, nil, "", fmt.Errorf("loading external package %s: %w", extPkg.ImportPath, parseErr)
+		}
+
+		// Merge sources
+		for k, v := range extSources {
+			sources[k] = v
+		}
+
+		fmt.Printf("Loaded %d structs from %s\n", len(extSources), extPkg.ImportPath)
 	}
 
 	return dtos, sources, pkgName, nil

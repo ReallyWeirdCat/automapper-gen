@@ -4,14 +4,14 @@
 
 A CLI utility that generates reflection-free Go code for mapping structs with type conversion support.
 
-
-> **⚠️ Development Status**: This project is in early development and serves primarily as a proof of concept. Use in production at your own risk.
+> **⚠️ Development Status**: This project is in early development and serves primarily as a proof of concept. While functional, it's still rough around the edges and lacks comprehensive testing. Use in production at your own risk.
 
 ## Features
 
 - 🚀 **Zero Reflection**: Generates type-safe code at compile time
 - 🔄 **Type Conversion**: Built-in converter system with custom converters
-- 📦 **External Packages**: Map from structs in other packages
+- 📦 **Remote Packages**: Map from structs in any Go module (local or remote)
+- 🌐 **Module Cache Support**: Automatically loads types from Go's module cache
 - 🏷️ **Flexible Mapping**: Tag-based field mapping and transformations
 - 🎯 **Type Safety**: Compile-time type checking with generics
 - ⚡ **Performance**: Direct field assignments, no runtime overhead
@@ -22,9 +22,15 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Usage](#usage)
+  - [Remote Modules](#remote-modules)
+  - [Basic Mapping](#basic-mapping)
+  - [Multiple Source Structs](#multiple-source-structs)
+  - [Field Tags](#field-tags)
+  - [Custom Converters](#custom-converters)
 - [Examples](#examples)
-- [Development](#development)
 - [How It Works](#how-it-works)
+
+📖 **[Complete Guide to Remote Modules](REMOTE_MODULES.md)**
 
 ## Installation
 
@@ -32,7 +38,7 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
 
 ```bash
 # Clone the repository
-git clone https://git.weirdcat.su/weirdcat/automapper-gen.git
+git clone https://github.com/yourusername/automapper-gen.git
 cd automapper-gen
 
 # Build and install
@@ -45,7 +51,7 @@ make build
 ### Using Go Install
 
 ```bash
-go install git.weirdcat.su/weirdcat/automapper-gen/cmd/automapper-gen@latest
+go install github.com/yourusername/automapper-gen/cmd/automapper-gen@latest
 ```
 
 ## Quick Start
@@ -71,12 +77,13 @@ Create an `automapper.json` file in your DTO package directory:
   "externalPackages": [
     {
       "alias": "db",
-      "importPath": "github.com/yourorg/yourproject/internal/db",
-      "localPath": "../db"
+      "importPath": "github.com/yourorg/yourproject/internal/db"
     }
   ]
 }
 ```
+
+**Note**: External packages are loaded directly from Go's module cache. No local paths needed!
 
 ### 2. Define Your Structs
 
@@ -100,7 +107,7 @@ type UserDB struct {
 ```go
 package dtos
 
-// automapper:from=db.UserDB
+//automapper:from=db.UserDB
 type UserDTO struct {
     ID        int64
     Username  string
@@ -115,9 +122,6 @@ type UserDTO struct {
 ```bash
 # From the dtos directory
 automapper-gen .
-
-# Or using make from project root
-make generate
 ```
 
 ### 4. Use the Generated Code
@@ -185,6 +189,25 @@ func main() {
 
 ### External Packages
 
+External packages are loaded directly from Go's module cache, making it easy to map from types in any Go module:
+
+```json
+{
+  "externalPackages": [
+    {
+      "alias": "db",
+      "importPath": "github.com/yourorg/project/db"
+    },
+    {
+      "alias": "models",
+      "importPath": "git.example.com/team/service/models"
+    }
+  ]
+}
+```
+
+**Local Development**: If you're working on a module locally and want to use local changes:
+
 ```json
 {
   "externalPackages": [
@@ -197,12 +220,83 @@ func main() {
 }
 ```
 
+The generator will try the local path first, then fall back to the module cache.
+
 ## Usage
+
+### Remote Modules
+
+One of the key features is the ability to map from types in any Go module, whether it's in your repository or a completely separate one:
+
+#### Example: Mapping from a Different Repository
+
+**Repository 1** (`git.weirdcat.su/test/prj1`):
+```go
+// bd/models.go
+package bd
+
+import "time"
+
+type User struct {
+    ID        int64
+    Username  string
+    CreatedAt time.Time
+}
+```
+
+**Repository 2** (`git.weirdcat.su/test/prj2`):
+```json
+// dto/automapper.json
+{
+  "package": "dto",
+  "output": "automappers.go",
+  "defaultConverters": [
+    {
+      "from": "time.Time",
+      "to": "string",
+      "name": "TimeToString",
+      "function": "TimeToJSString"
+    }
+  ],
+  "generateInit": true,
+  "externalPackages": [
+    {
+      "alias": "db",
+      "importPath": "git.weirdcat.su/test/prj1/bd"
+    }
+  ]
+}
+```
+
+```go
+// dto/user.go
+package dto
+
+//automapper:from=db.User
+type UserDTO struct {
+    ID        int64
+    Username  string
+    CreatedAt string `automapper:"converter=TimeToString"`
+}
+```
+
+**Prerequisites**: Make sure the external module is in your `go.mod`:
+```bash
+go get git.weirdcat.su/test/prj1
+```
+
+Then generate:
+```bash
+cd dto
+automapper-gen .
+```
+
+The generator will load the `bd` package from your module cache and generate the appropriate mappers!
 
 ### Basic Mapping
 
 ```go
-// automapper:from=SourceStruct
+//automapper:from=SourceStruct
 type TargetDTO struct {
     Field1 string
     Field2 int
@@ -212,7 +306,7 @@ type TargetDTO struct {
 ### Multiple Source Structs
 
 ```go
-// automapper:from=User,Profile
+//automapper:from=User,Profile
 type UserProfileDTO struct {
     // Will generate MapFromUser and MapFromProfile
     Name  string
@@ -293,7 +387,7 @@ type User struct {
 ```go
 package dtos
 
-// automapper:from=db.User
+//automapper:from=db.User
 type UserDTO struct {
     Id       int64
     Username string
@@ -328,89 +422,13 @@ type Product struct {
 ```go
 package dtos
 
-// automapper:from=db.Product
+//automapper:from=db.Product
 type ProductDTO struct {
     Id        int64
     Name      string
     Price     float64
     CreatedAt string `automapper:"converter=TimeToString"`
 }
-```
-
-### Example 3: Complex Mapping
-
-Run the included example:
-
-```bash
-make example
-```
-
-This runs the code in `example/` directory which demonstrates:
-- External package mapping
-- Type conversions
-- Field name transformations
-- Custom field mappings
-
-## Development
-
-### Prerequisites
-
-- Go 1.21 or higher
-- Make (optional, but recommended)
-
-### Building
-
-```bash
-# Build the binary
-make build
-
-# Install to GOPATH
-make install
-
-# Run tests
-make test
-
-# Run benchmarks
-make bench
-
-# Format code
-make fmt
-
-# Lint code (requires golangci-lint)
-make lint
-
-# Run all checks
-make check
-```
-
-### Testing
-
-```bash
-# Run all tests with coverage
-make test
-
-# View coverage report
-open coverage.html
-
-# Run specific tests
-go test -v ./internal/parser/
-go test -v ./internal/generator/
-```
-
-### Project Commands
-
-```bash
-# Generate example mappers
-make generate
-
-# Run example
-make example
-
-# Clean build artifacts
-make clean
-
-# Create release (requires goreleaser)
-make release
 ```
 
 ## How It Works
