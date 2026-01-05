@@ -5,8 +5,8 @@ package dtos
 import (
 	"errors"
 	"fmt"
+	db "git.weirdcat.su/weirdcat/automapper-gen/example/db"
 	"time"
-	"git.weirdcat.su/weirdcat/automapper-gen/example/db"
 )
 
 // Converter type for type-safe conversions
@@ -62,4 +62,3 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 
 	return nil
 }
-

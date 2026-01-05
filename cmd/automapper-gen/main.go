@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dave/jennifer/jen"
 )
 
 type Config struct {
@@ -19,13 +21,13 @@ type Config struct {
 	FieldNameTransform string              `json:"fieldNameTransform"`
 	NilPointersForNull bool                `json:"nilPointersForNull"`
 	GenerateInit       bool                `json:"generateInit"`
-	ExternalPackages   []ExternalPackage   `json:"externalPackages"` // Changed to struct
+	ExternalPackages   []ExternalPackage   `json:"externalPackages"`
 }
 
 type ExternalPackage struct {
-	Alias      string `json:"alias"`      // Optional alias for the import
-	ImportPath string `json:"importPath"` // Full import path like "git.weirdcat.su/automapper-gen/example/db"
-	LocalPath  string `json:"localPath"`  // Local relative path for parsing source files
+	Alias      string `json:"alias"`
+	ImportPath string `json:"importPath"`
+	LocalPath  string `json:"localPath"`
 }
 
 type ConverterDef struct {
@@ -57,7 +59,7 @@ type SourceStruct struct {
 	Package    string
 	IsExternal bool
 	ImportPath string
-	Alias      string // Import alias
+	Alias      string
 }
 
 type FieldTypeInfo struct {
@@ -98,7 +100,7 @@ func main() {
 	}
 
 	// Generate code
-	code, err := generateCode(dtos, sources, config, pkgName)
+	file, err := generateCode(dtos, sources, config, pkgName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating code: %v\n", err)
 		os.Exit(1)
@@ -106,7 +108,7 @@ func main() {
 
 	// Write output
 	outputPath := filepath.Join(pkgPath, config.Output)
-	if err := os.WriteFile(outputPath, []byte(code), 0644); err != nil {
+	if err := file.Save(outputPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
 		os.Exit(1)
 	}
@@ -147,21 +149,13 @@ func parsePackage(pkgPath string, config *Config) ([]DTOMapping, map[string]Sour
 
 	// Parse external packages
 	for _, extPkg := range config.ExternalPackages {
-		// Determine local path for parsing
 		localPath := extPkg.LocalPath
-		if localPath == "" {
-			// If no local path specified, try to find it relative to main package
-			// This is a fallback for backward compatibility
-			localPath = filepath.Join(pkgPath, "..", strings.TrimPrefix(extPkg.ImportPath, "git.weirdcat.su/automapper-gen/"))
-		} else if !filepath.IsAbs(localPath) {
-			// Make relative path absolute relative to main package
+		if !filepath.IsAbs(localPath) {
 			localPath = filepath.Join(pkgPath, localPath)
 		}
 
-		// Determine package alias
 		alias := extPkg.Alias
 		if alias == "" {
-			// Extract alias from import path (last part)
 			parts := strings.Split(extPkg.ImportPath, "/")
 			alias = parts[len(parts)-1]
 		}
@@ -173,13 +167,11 @@ func parsePackage(pkgPath string, config *Config) ([]DTOMapping, map[string]Sour
 				continue
 			}
 			
-			// Merge sources from external package
 			for k, v := range extSources {
 				sources[k] = v
 			}
 			
-			// Note: We don't merge DTOs from external packages
-			_ = extDtos // Silence unused variable warning
+			_ = extDtos
 		} else {
 			fmt.Printf("Warning: local path not found for external package %s: %v\n", extPkg.ImportPath, err)
 		}
@@ -204,7 +196,6 @@ func parseDir(fset *token.FileSet, dir string, alias string, importPath string, 
 		pkgName = name
 		
 		for _, file := range pkg.Files {
-			// First pass: collect all structs (potential sources)
 			for _, decl := range file.Decls {
 				if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
 					for _, spec := range genDecl.Specs {
@@ -216,10 +207,8 @@ func parseDir(fset *token.FileSet, dir string, alias string, importPath string, 
 								sourceStruct.ImportPath = importPath
 								sourceStruct.Alias = alias
 								
-								// For external packages, use alias as package name
 								if isExternal {
 									sourceStruct.Package = alias
-									// Store with alias prefix
 									sources[alias+"."+typeSpec.Name.Name] = sourceStruct
 								} else {
 									sourceStruct.Package = pkgName
@@ -231,13 +220,11 @@ func parseDir(fset *token.FileSet, dir string, alias string, importPath string, 
 				}
 			}
 
-			// Second pass: find DTOs with annotations (only in main package)
 			if !isExternal {
 				for _, decl := range file.Decls {
 					if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
 						for _, spec := range genDecl.Specs {
 							if typeSpec, ok := spec.(*ast.TypeSpec); ok {
-								// Check for automapper annotation
 								var annotation string
 								if genDecl.Doc != nil {
 									annotation = extractAnnotation(genDecl.Doc)
@@ -275,7 +262,7 @@ func parseStruct(structType *ast.StructType) SourceStruct {
 
 	for _, field := range structType.Fields.List {
 		if len(field.Names) == 0 {
-			continue // embedded field
+			continue
 		}
 		
 		fieldName := field.Names[0].Name
@@ -339,7 +326,6 @@ func parseFields(structType *ast.StructType) []FieldInfo {
 			tag = strings.Trim(tag, "`")
 			fieldInfo.Tag = tag
 			
-			// Parse automapper tag
 			if strings.Contains(tag, "automapper:") {
 				fieldInfo.ConverterTag, fieldInfo.FieldTag, fieldInfo.Ignore = parseAutomapperTag(tag)
 			}
@@ -352,7 +338,6 @@ func parseFields(structType *ast.StructType) []FieldInfo {
 }
 
 func parseAutomapperTag(tag string) (converter, field string, ignore bool) {
-	// Extract automapper:"..." part
 	start := strings.Index(tag, `automapper:"`)
 	if start == -1 {
 		return
@@ -398,7 +383,6 @@ func extractAnnotation(doc *ast.CommentGroup) string {
 		text := comment.Text
 		text = strings.TrimSpace(text)
 		
-		// Remove // or /* */ markers
 		if strings.HasPrefix(text, "//") {
 			text = strings.TrimSpace(text[2:])
 		} else if strings.HasPrefix(text, "/*") && strings.HasSuffix(text, "*/") {
@@ -434,159 +418,165 @@ func snakeToCamel(s string) string {
 	return strings.Join(parts, "")
 }
 
-func generateCode(dtos []DTOMapping, sources map[string]SourceStruct, config *Config, pkgName string) (string, error) {
-	var sb strings.Builder
-
-	// Header
-	sb.WriteString("// Code generated by automapper-gen. DO NOT EDIT.\n\n")
-	sb.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
+func generateCode(dtos []DTOMapping, sources map[string]SourceStruct, config *Config, pkgName string) (*jen.File, error) {
+	f := jen.NewFile(pkgName)
 	
-	// Collect required imports
-	imports := map[string]bool{
-		"errors": true,
-		"fmt":    true,
-	}
+	// Add header comment
+	f.HeaderComment("Code generated by automapper-gen. DO NOT EDIT.")
 	
-	// Check for time usage in converters
-	for _, conv := range config.DefaultConverters {
-		if strings.Contains(conv.From, "time.") || strings.Contains(conv.To, "time.") {
-			imports["time"] = true
+	// Build import mapping (alias -> importPath) for external packages
+	importMap := make(map[string]string)
+	for _, source := range sources {
+		if source.IsExternal && source.Alias != "" && source.ImportPath != "" {
+			importMap[source.Alias] = source.ImportPath
 		}
 	}
 	
-	// Map to store import paths by alias
-	importMap := make(map[string]string) // alias -> import path
+	// Generate converter infrastructure
+	generateConverterInfrastructure(f, config, importMap)
 	
-	// Check for external package usage in DTOs
-	for _, dto := range dtos {
-		for _, sourceName := range dto.Sources {
-			if source, ok := sources[sourceName]; ok && source.IsExternal {
-				importMap[source.Alias] = source.ImportPath
-			}
-		}
-	}
-	
-	// Write imports
-	if len(imports) > 0 || len(importMap) > 0 {
-		sb.WriteString("import (\n")
-		
-		// Write standard imports
-		for imp := range imports {
-			sb.WriteString(fmt.Sprintf("\t\"%s\"\n", imp))
-		}
-		
-		// Write external package imports
-		for alias, importPath := range importMap {
-			// If alias is the same as the last part of import path, don't use alias
-			parts := strings.Split(importPath, "/")
-			lastPart := parts[len(parts)-1]
-			
-			if alias == lastPart {
-				sb.WriteString(fmt.Sprintf("\t\"%s\"\n", importPath))
-			} else {
-				sb.WriteString(fmt.Sprintf("\t%s \"%s\"\n", alias, importPath))
-			}
-		}
-		
-		sb.WriteString(")\n\n")
-	}
-
-	// Converter infrastructure
-	sb.WriteString(generateConverterInfrastructure(config))
-
-	// Generate MapFrom methods for each DTO
+	// Generate MapFrom methods
 	for _, dto := range dtos {
 		for _, sourceName := range dto.Sources {
 			source, ok := sources[sourceName]
 			if !ok {
-				return "", fmt.Errorf("source struct %s not found for DTO %s", sourceName, dto.Name)
+				return nil, fmt.Errorf("source struct %s not found for DTO %s", sourceName, dto.Name)
 			}
 
 			methodName := "MapFrom"
 			if len(dto.Sources) > 1 || source.IsExternal {
-				// If multiple sources OR source is external, use explicit method name
 				methodName = "MapFrom" + extractTypeNameWithoutPackage(sourceName)
 			}
 
-			sb.WriteString(generateMapFromMethod(dto, source, sourceName, methodName, config))
-			sb.WriteString("\n")
+			generateMapFromMethod(f, dto, source, sourceName, methodName, config, importMap)
 		}
 	}
-
-	return sb.String(), nil
+	
+	return f, nil
 }
 
-func generateConverterInfrastructure(config *Config) string {
-	var sb strings.Builder
-
-	sb.WriteString("// Converter type for type-safe conversions\n")
-	sb.WriteString("type Converter[From any, To any] func(From) (To, error)\n\n")
-
-	sb.WriteString("// Global converter registry\n")
-	sb.WriteString("var converters = make(map[string]interface{})\n\n")
-
-	sb.WriteString("// RegisterConverter registers a type-safe converter\n")
-	sb.WriteString("func RegisterConverter[From any, To any](name string, fn Converter[From, To]) {\n")
-	sb.WriteString("\tconverters[name] = fn\n")
-	sb.WriteString("}\n\n")
-
-	sb.WriteString("// Convert performs a type-safe conversion using a registered converter\n")
-	sb.WriteString("func Convert[From any, To any](name string, value From) (To, error) {\n")
-	sb.WriteString("\tvar zero To\n")
-	sb.WriteString("\tconverterIface, ok := converters[name]\n")
-	sb.WriteString("\tif !ok {\n")
-	sb.WriteString("\t\treturn zero, fmt.Errorf(\"converter %s not registered\", name)\n")
-	sb.WriteString("\t}\n")
-	sb.WriteString("\tconverter, ok := converterIface.(Converter[From, To])\n")
-	sb.WriteString("\tif !ok {\n")
-	sb.WriteString("\t\treturn zero, fmt.Errorf(\"converter %s has wrong type\", name)\n")
-	sb.WriteString("\t}\n")
-	sb.WriteString("\treturn converter(value)\n")
-	sb.WriteString("}\n\n")
-
+func generateConverterInfrastructure(f *jen.File, config *Config, importMap map[string]string) {
+	// Converter type
+	f.Comment("Converter type for type-safe conversions")
+	f.Type().Id("Converter").Types(
+		jen.Id("From").Any(),
+		jen.Id("To").Any(),
+	).Func().Params(jen.Id("From")).Params(jen.Id("To"), jen.Error())
+	
+	f.Line()
+	
+	// Global registry
+	f.Comment("Global converter registry")
+	f.Var().Id("converters").Op("=").Make(jen.Map(jen.String()).Interface())
+	
+	f.Line()
+	
+	// RegisterConverter
+	f.Comment("RegisterConverter registers a type-safe converter")
+	f.Func().Id("RegisterConverter").Types(
+		jen.Id("From").Any(),
+		jen.Id("To").Any(),
+	).Params(
+		jen.Id("name").String(),
+		jen.Id("fn").Id("Converter").Types(jen.Id("From"), jen.Id("To")),
+	).Block(
+		jen.Id("converters").Index(jen.Id("name")).Op("=").Id("fn"),
+	)
+	
+	f.Line()
+	
+	// Convert
+	f.Comment("Convert performs a type-safe conversion using a registered converter")
+	f.Func().Id("Convert").Types(
+		jen.Id("From").Any(),
+		jen.Id("To").Any(),
+	).Params(
+		jen.Id("name").String(),
+		jen.Id("value").Id("From"),
+	).Params(jen.Id("To"), jen.Error()).Block(
+		jen.Var().Id("zero").Id("To"),
+		jen.List(jen.Id("converterIface"), jen.Id("ok")).Op(":=").Id("converters").Index(jen.Id("name")),
+		jen.If(jen.Op("!").Id("ok")).Block(
+			jen.Return(jen.Id("zero"), jen.Qual("fmt", "Errorf").Call(
+				jen.Lit("converter %s not registered"),
+				jen.Id("name"),
+			)),
+		),
+		jen.List(jen.Id("converter"), jen.Id("ok")).Op(":=").Id("converterIface").Assert(
+			jen.Id("Converter").Types(jen.Id("From"), jen.Id("To")),
+		),
+		jen.If(jen.Op("!").Id("ok")).Block(
+			jen.Return(jen.Id("zero"), jen.Qual("fmt", "Errorf").Call(
+				jen.Lit("converter %s has wrong type"),
+				jen.Id("name"),
+			)),
+		),
+		jen.Return(jen.Id("converter").Call(jen.Id("value"))),
+	)
+	
+	f.Line()
+	
 	// Generate init with default converters
 	if config.GenerateInit && len(config.DefaultConverters) > 0 {
-		sb.WriteString("func init() {\n")
+		initStatements := []jen.Code{}
+		
 		for _, conv := range config.DefaultConverters {
-			sb.WriteString(fmt.Sprintf("\t// Register %s: %s -> %s\n", conv.Name, conv.From, conv.To))
-			sb.WriteString(fmt.Sprintf("\tRegisterConverter[%s, %s](\"%s\", %s)\n", conv.From, conv.To, conv.Name, conv.Function))
+			initStatements = append(initStatements,
+				jen.Comment(fmt.Sprintf("Register %s: %s -> %s", conv.Name, conv.From, conv.To)),
+			)
+			
+			// Parse types to generate proper type parameters
+			fromType := parseTypeForJen(conv.From, importMap)
+			toType := parseTypeForJen(conv.To, importMap)
+			
+			initStatements = append(initStatements,
+				jen.Id("RegisterConverter").Types(fromType, toType).Call(
+					jen.Lit(conv.Name),
+					jen.Id(conv.Function),
+				),
+			)
 		}
-		sb.WriteString("}\n\n")
-
-		// Generate built-in converters
-		sb.WriteString("// TimeToJSString converts time.Time to JavaScript ISO 8601 string\n")
-		sb.WriteString("func TimeToJSString(t time.Time) (string, error) {\n")
-		sb.WriteString("\treturn t.Format(time.RFC3339), nil\n")
-		sb.WriteString("}\n\n")
+		
+		f.Func().Id("init").Params().Block(initStatements...)
+		
+		f.Line()
+		
+		// Built-in converter: TimeToJSString
+		f.Comment("TimeToJSString converts time.Time to JavaScript ISO 8601 string")
+		f.Func().Id("TimeToJSString").Params(
+			jen.Id("t").Qual("time", "Time"),
+		).Params(jen.String(), jen.Error()).Block(
+			jen.Return(jen.Id("t").Dot("Format").Call(jen.Qual("time", "RFC3339")), jen.Nil()),
+		)
+		
+		f.Line()
 	}
-
-	return sb.String()
 }
 
-func generateMapFromMethod(dto DTOMapping, source SourceStruct, sourceName, methodName string, config *Config) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("// %s maps from %s to %s\n", methodName, sourceName, dto.Name))
+func generateMapFromMethod(f *jen.File, dto DTOMapping, source SourceStruct, sourceName, methodName string, config *Config, importMap map[string]string) {
+	// Parse parameter type
+	paramType := parseTypeRefForJen(sourceName, importMap)
 	
-	// Use the full qualified name with package prefix if present
-	paramType := sourceName
-	sb.WriteString(fmt.Sprintf("func (d *%s) %s(src *%s) error {\n", dto.Name, methodName, paramType))
-	sb.WriteString("\tif src == nil {\n")
-	sb.WriteString("\t\treturn errors.New(\"source is nil\")\n")
-	sb.WriteString("\t}\n\n")
-
+	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
+	
+	// Build method body
+	methodBody := []jen.Code{
+		jen.If(jen.Id("src").Op("==").Nil()).Block(
+			jen.Return(jen.Qual("errors", "New").Call(jen.Lit("source is nil"))),
+		),
+		jen.Line(),
+	}
+	
 	// Generate field mappings
 	for _, dtoField := range dto.Fields {
 		if dtoField.Ignore {
 			continue
 		}
-
-		// Determine source field name
+		
 		sourceFieldName := dtoField.Name
 		if dtoField.FieldTag != "" {
 			sourceFieldName = dtoField.FieldTag
 		} else if config.FieldNameTransform == "snake_to_camel" {
-			// Try to find snake_case version
 			for srcFieldName := range source.Fields {
 				if snakeToCamel(srcFieldName) == dtoField.Name {
 					sourceFieldName = srcFieldName
@@ -594,49 +584,108 @@ func generateMapFromMethod(dto DTOMapping, source SourceStruct, sourceName, meth
 				}
 			}
 		}
-
+		
 		sourceField, exists := source.Fields[sourceFieldName]
 		if !exists {
-			// Field doesn't exist in source, skip
-			sb.WriteString(fmt.Sprintf("\t// %s: not found in source, will be zero value\n", dtoField.Name))
+			methodBody = append(methodBody,
+				jen.Comment(fmt.Sprintf("%s: not found in source, will be zero value", dtoField.Name)),
+			)
 			continue
 		}
-
-		// Generate assignment based on type
+		
 		if dtoField.ConverterTag != "" {
 			// Use converter
-			sb.WriteString("\t{\n")
-			sb.WriteString("\t\tvar err error\n")
-			sb.WriteString(fmt.Sprintf("\t\td.%s, err = Convert[%s, %s](\"%s\", src.%s)\n", 
-				dtoField.Name, sourceField.BaseType, extractBaseType(dtoField.Type), dtoField.ConverterTag, sourceFieldName))
-			sb.WriteString("\t\tif err != nil {\n")
-			sb.WriteString(fmt.Sprintf("\t\t\treturn fmt.Errorf(\"converting field %s: %%w\", err)\n", dtoField.Name))
-			sb.WriteString("\t\t}\n")
-			sb.WriteString("\t}\n")
+			fromType := parseTypeForJen(sourceField.BaseType, importMap)
+			toType := parseTypeForJen(extractBaseType(dtoField.Type), importMap)
+			
+			methodBody = append(methodBody,
+				jen.Block(
+					jen.Var().Err().Error(),
+					jen.List(jen.Id("d").Dot(dtoField.Name), jen.Err()).Op("=").Id("Convert").Types(
+						fromType, toType,
+					).Call(
+						jen.Lit(dtoField.ConverterTag),
+						jen.Id("src").Dot(sourceFieldName),
+					),
+					jen.If(jen.Err().Op("!=").Nil()).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+							jen.Err(),
+						)),
+					),
+				),
+			)
 		} else {
-			// Direct assignment (simplified)
-			sb.WriteString(fmt.Sprintf("\td.%s = src.%s\n", dtoField.Name, sourceFieldName))
+			// Direct assignment
+			methodBody = append(methodBody,
+				jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName),
+			)
 		}
 	}
-
-	sb.WriteString("\n\treturn nil\n")
-	sb.WriteString("}\n")
-
-	return sb.String()
+	
+	methodBody = append(methodBody, jen.Line(), jen.Return(jen.Nil()))
+	
+	// Generate method
+	f.Func().Params(
+		jen.Id("d").Op("*").Id(dto.Name),
+	).Id(methodName).Params(
+		jen.Id("src").Op("*").Add(paramType),
+	).Error().Block(methodBody...)
+	
+	f.Line()
 }
 
-func isNestedStruct(typeName string) bool {
-	// Simple heuristic: uppercase first letter suggests custom struct
-	typeName = strings.TrimPrefix(typeName, "*")
-	typeName = strings.TrimPrefix(typeName, "[]")
-	if len(typeName) == 0 {
-		return false
+func parseTypeForJen(typeName string, importMap map[string]string) jen.Code {
+	// Handle pointers
+	if strings.HasPrefix(typeName, "*") {
+		return jen.Op("*").Add(parseTypeForJen(strings.TrimPrefix(typeName, "*"), importMap))
 	}
-	// Built-in types start with lowercase or are in standard packages
-	if typeName[0] >= 'A' && typeName[0] <= 'Z' && !strings.Contains(typeName, ".") {
-		return true
+	
+	// Handle slices
+	if strings.HasPrefix(typeName, "[]") {
+		return jen.Index().Add(parseTypeForJen(strings.TrimPrefix(typeName, "[]"), importMap))
 	}
-	return false
+	
+	// Handle qualified types (e.g., time.Time, db.User)
+	if strings.Contains(typeName, ".") {
+		parts := strings.Split(typeName, ".")
+		if len(parts) == 2 {
+			alias := parts[0]
+			typeIdent := parts[1]
+			
+			// Look up the actual import path from the alias
+			if importPath, ok := importMap[alias]; ok {
+				return jen.Qual(importPath, typeIdent)
+			}
+			
+			// Fallback to standard library packages
+			return jen.Qual(alias, typeIdent)
+		}
+	}
+	
+	// Simple type
+	return jen.Id(typeName)
+}
+
+func parseTypeRefForJen(typeName string, importMap map[string]string) jen.Code {
+	// For type references in parameters, handle package prefixes
+	if strings.Contains(typeName, ".") {
+		parts := strings.Split(typeName, ".")
+		if len(parts) == 2 {
+			alias := parts[0]
+			typeIdent := parts[1]
+			
+			// Look up the actual import path from the alias
+			if importPath, ok := importMap[alias]; ok {
+				return jen.Qual(importPath, typeIdent)
+			}
+			
+			// Fallback to standard library packages
+			return jen.Qual(alias, typeIdent)
+		}
+	}
+	
+	return jen.Id(typeName)
 }
 
 func extractBaseType(typeName string) string {
@@ -645,7 +694,6 @@ func extractBaseType(typeName string) string {
 	return typeName
 }
 
-// Helper function to extract type name without package prefix
 func extractTypeNameWithoutPackage(typeName string) string {
 	if strings.Contains(typeName, ".") {
 		parts := strings.Split(typeName, ".")
