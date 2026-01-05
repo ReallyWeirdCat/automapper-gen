@@ -1,0 +1,55 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+)
+
+// Config represents the automapper configuration
+type Config struct {
+	Package            string             `json:"package"`
+	Output             string             `json:"output"`
+	DefaultConverters  []ConverterDef     `json:"defaultConverters"`
+	FieldNameTransform string             `json:"fieldNameTransform"`
+	NilPointersForNull bool               `json:"nilPointersForNull"`
+	GenerateInit       bool               `json:"generateInit"`
+	ExternalPackages   []ExternalPackage  `json:"externalPackages"`
+}
+
+// ExternalPackage defines an external package to include in parsing
+type ExternalPackage struct {
+	Alias      string `json:"alias"`
+	ImportPath string `json:"importPath"`
+	LocalPath  string `json:"localPath"`
+}
+
+// ConverterDef defines a converter function registration
+type ConverterDef struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Name     string `json:"name"`
+	Function string `json:"function"`
+}
+
+// Load reads and parses the configuration file
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	// Set defaults
+	if cfg.Output == "" {
+		cfg.Output = "automappers.go"
+	}
+	if cfg.FieldNameTransform == "" {
+		cfg.FieldNameTransform = "snake_to_camel"
+	}
+
+	return &cfg, nil
+}
