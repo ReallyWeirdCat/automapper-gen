@@ -44,11 +44,8 @@ func Convert[From any, To any](name string, value From) (To, error) {
 }
 
 func init() {
-	// Register TimeToString: time.Time -> string
 	RegisterConverter("TimeToString", TimeToJSString)
-	// Register RoleEnum: string -> Role
 	RegisterConverter("RoleEnum", StrRoleToEnum)
-	// Register InterestEnums: []string -> []Interest
 	RegisterConverter("InterestEnums", StrInterestsToEnums)
 }
 

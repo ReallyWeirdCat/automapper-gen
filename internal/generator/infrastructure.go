@@ -1,8 +1,6 @@
 package generator
 
 import (
-	"fmt"
-
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
 	"github.com/dave/jennifer/jen"
 )
@@ -75,7 +73,7 @@ func GenerateInfrastructure(f *jen.File, cfg *config.Config, importMap map[strin
 	f.Line()
 
 	// Generate init with default converters
-	if cfg.GenerateInit && len(cfg.DefaultConverters) > 0 {
+	if len(cfg.DefaultConverters) > 0 {
 		generateInit(f, cfg)
 	}
 }
@@ -85,10 +83,6 @@ func generateInit(f *jen.File, cfg *config.Config) {
 	initStatements := []jen.Code{}
 
 	for _, conv := range cfg.DefaultConverters {
-		initStatements = append(initStatements,
-			jen.Comment(fmt.Sprintf("Register %s: %s -> %s", conv.Name, conv.From, conv.To)),
-		)
-
 		initStatements = append(initStatements,
 			jen.Id("RegisterConverter").Call(
 				jen.Lit(conv.Name),

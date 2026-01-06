@@ -12,7 +12,6 @@ type Config struct {
 	DefaultConverters  []ConverterDef    `json:"defaultConverters"`
 	FieldNameTransform string            `json:"fieldNameTransform"`
 	NilPointersForNull bool              `json:"nilPointersForNull"`
-	GenerateInit       bool              `json:"generateInit"`
 	ExternalPackages   []ExternalPackage `json:"externalPackages"`
 }
 
@@ -25,8 +24,6 @@ type ExternalPackage struct {
 
 // ConverterDef defines a converter function registration
 type ConverterDef struct {
-	From     string `json:"from"`
-	To       string `json:"to"`
 	Name     string `json:"name"`
 	Function string `json:"function"`
 }

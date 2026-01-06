@@ -3,30 +3,22 @@
   "output": "automappers.go",
   "defaultConverters": [
     {
-      "from": "time.Time",
-      "to": "string",
       "name": "TimeToString",
       "function": "TimeToJSString"
     },
     {
-      "from": "string",
-      "to": "Role",
       "name": "RoleEnum",
       "function": "StrRoleToEnum"
     },
     {
-      "from": "[]string",
-      "to": "[]Interest",
       "name": "InterestEnums",
       "function": "StrInterestsToEnums"
     }
   ],
-  "generateInit": true,
   "externalPackages": [
     {
       "alias": "db",
-      "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db",
-      "localPath": "../db"
+      "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db"
     }
   ]
 }
