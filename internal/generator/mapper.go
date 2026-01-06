@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"strings"
 
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/parser"
@@ -57,7 +58,8 @@ func buildMethodBody(dto types.DTOMapping, source types.SourceStruct, cfg *confi
 		if dtoField.ConverterTag != "" {
 			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, importMap)...)
 		} else {
-			statements = append(statements, buildDirectMapping(dtoField, sourceFieldName))
+			// Check for pointer mismatch and handle accordingly
+			statements = append(statements, buildFieldMapping(dtoField, sourceField, sourceFieldName)...)
 		}
 	}
 
@@ -106,7 +108,58 @@ func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldType
 	}
 }
 
-// buildDirectMapping creates a statement for direct field assignment
+// buildFieldMapping creates statements for field mapping with pointer conversion
+func buildFieldMapping(dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string) []jen.Code {
+	dtoIsPointer := strings.HasPrefix(dtoField.Type, "*")
+	srcIsPointer := sourceField.IsPointer
+
+	// Extract base types for comparison
+	dtoBaseType := ExtractBaseType(dtoField.Type)
+	srcBaseType := sourceField.BaseType
+
+	// If base types don't match, this needs a converter (but that's handled elsewhere)
+	// Here we only handle pointer conversions for matching base types
+	if dtoBaseType != srcBaseType {
+		// Direct assignment if types match exactly
+		return []jen.Code{
+			jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName),
+		}
+	}
+
+	// Case 1: Both are pointers or both are values - direct assignment
+	if dtoIsPointer == srcIsPointer {
+		return []jen.Code{
+			jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName),
+		}
+	}
+
+	// Case 2: Source is pointer, destination is value
+	if srcIsPointer && !dtoIsPointer {
+		return []jen.Code{
+			jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+				jen.Id("d").Dot(dtoField.Name).Op("=").Op("*").Id("src").Dot(sourceFieldName),
+			),
+			jen.Comment(fmt.Sprintf("// %s: nil pointer will result in zero value", dtoField.Name)),
+		}
+	}
+
+	// Case 3: Source is value, destination is pointer
+	if !srcIsPointer && dtoIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("v").Op(":=").Id("src").Dot(sourceFieldName),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("v"),
+			),
+		}
+	}
+
+	// Fallback (shouldn't reach here)
+	return []jen.Code{
+		jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName),
+	}
+}
+
+// buildDirectMapping creates a statement for direct field assignment (legacy)
 func buildDirectMapping(dtoField types.FieldInfo, sourceFieldName string) jen.Code {
 	return jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName)
 }

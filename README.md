@@ -16,6 +16,8 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
 - 🎯 **Type Safety**: Compile-time type checking with generics
 - ⚡ **Performance**: Direct field assignments, no runtime overhead
 
+[![Marilyn Manson - No Reflection](https://img.youtube.com/vi/DOj3wDlr_BM/0.jpg)](https://www.youtube.com/watch?v=DOj3wDlr_BM)
+
 ## Table of Contents
 
 - [Installation](#installation)
