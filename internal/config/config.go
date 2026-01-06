@@ -7,13 +7,13 @@ import (
 
 // Config represents the automapper configuration
 type Config struct {
-	Package            string             `json:"package"`
-	Output             string             `json:"output"`
-	DefaultConverters  []ConverterDef     `json:"defaultConverters"`
-	FieldNameTransform string             `json:"fieldNameTransform"`
-	NilPointersForNull bool               `json:"nilPointersForNull"`
-	GenerateInit       bool               `json:"generateInit"`
-	ExternalPackages   []ExternalPackage  `json:"externalPackages"`
+	Package            string            `json:"package"`
+	Output             string            `json:"output"`
+	DefaultConverters  []ConverterDef    `json:"defaultConverters"`
+	FieldNameTransform string            `json:"fieldNameTransform"`
+	NilPointersForNull bool              `json:"nilPointersForNull"`
+	GenerateInit       bool              `json:"generateInit"`
+	ExternalPackages   []ExternalPackage `json:"externalPackages"`
 }
 
 // ExternalPackage defines an external package to include in parsing

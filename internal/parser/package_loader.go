@@ -6,9 +6,8 @@ import (
 	"go/token"
 	"strings"
 
-	"golang.org/x/tools/go/packages"
-
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/types"
+	"golang.org/x/tools/go/packages"
 )
 
 // LoadExternalPackage loads a package from the module system (can be remote)
@@ -33,7 +32,7 @@ func LoadExternalPackage(importPath, alias string) (map[string]types.SourceStruc
 	}
 
 	pkg := pkgs[0]
-	
+
 	// Check for errors
 	if len(pkg.Errors) > 0 {
 		var errMsgs []string

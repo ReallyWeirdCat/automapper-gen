@@ -35,5 +35,5 @@ func main() {
 	}
 
 	fmt.Printf("User: %+v\n", dto)
-    // User: {ID:69 Username:Nice Role:4 About: Interests:[2 4] Birthday:0xc000014070 CreatedAt:2026-01-06T19:54:25+03:00}
+	// User: {ID:69 Username:Nice Role:4 About: Interests:[2 4] Birthday:0xc000014070 CreatedAt:2026-01-06T19:54:25+03:00}
 }

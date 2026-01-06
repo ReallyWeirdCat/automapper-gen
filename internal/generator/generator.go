@@ -10,7 +10,12 @@ import (
 )
 
 // Generate creates the automapper code file
-func Generate(dtos []types.DTOMapping, sources map[string]types.SourceStruct, cfg *config.Config, pkgName string) (*jen.File, error) {
+func Generate(
+	dtos []types.DTOMapping,
+	sources map[string]types.SourceStruct,
+	cfg *config.Config,
+	pkgName string,
+) (*jen.File, error) {
 	f := jen.NewFile(pkgName)
 
 	// Add header comment
@@ -59,12 +64,12 @@ func buildImportMap(sources map[string]types.SourceStruct) map[string]string {
 // ParseTypeForJen converts a type string to jen.Code with proper imports
 func ParseTypeForJen(typeName string, importMap map[string]string) jen.Code {
 	// Handle pointers
-	if after, ok :=strings.CutPrefix(typeName, "*"); ok  {
+	if after, ok := strings.CutPrefix(typeName, "*"); ok {
 		return jen.Op("*").Add(ParseTypeForJen(after, importMap))
 	}
 
 	// Handle slices
-	if after, ok :=strings.CutPrefix(typeName, "[]"); ok  {
+	if after, ok := strings.CutPrefix(typeName, "[]"); ok {
 		return jen.Index().Add(ParseTypeForJen(after, importMap))
 	}
 

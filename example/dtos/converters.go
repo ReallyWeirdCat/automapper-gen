@@ -9,21 +9,21 @@ import (
 
 // Convert string to Role enum
 func StrRoleToEnum(roleStr string) (Role, error) {
-		switch strings.ToLower(roleStr) {
-		case "client":
-			return Client, nil
-		case "cashier":
-			return Cashier, nil
-		case "restocker":
-			return Restocker, nil
-		case "delivery":
-			return Delivery, nil
-		case "security":
-			return Security, nil
-		case "tech":
-			return Tech, nil
-		}
-		return 0, errors.New("invalid role: " + roleStr)
+	switch strings.ToLower(roleStr) {
+	case "client":
+		return Client, nil
+	case "cashier":
+		return Cashier, nil
+	case "restocker":
+		return Restocker, nil
+	case "delivery":
+		return Delivery, nil
+	case "security":
+		return Security, nil
+	case "tech":
+		return Tech, nil
+	}
+	return 0, errors.New("invalid role: " + roleStr)
 }
 
 // Convert array of strings to array of Interest enums
