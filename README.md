@@ -4,7 +4,7 @@
 
 A CLI utility that generates reflection-free Go code for mapping structs with type conversion support.
 
-> **⚠️ Development Status**: This project is in early development. There are yet no integrated tests, and many things may change in the near future. Use in production at your own risk (and if you do, please tell me if you like it).
+> **⚠️ Development Status**: This project is in early development. There are yet no integrated tests, and some things may be subject to change. Any feedback is greatly appreciated!
 
 ## Features
 
@@ -28,7 +28,8 @@ A CLI utility that generates reflection-free Go code for mapping structs with ty
   - [Basic Mapping](#basic-mapping)
   - [Multiple Source Structs](#multiple-source-structs)
   - [Field Tags](#field-tags)
-  - [Custom Converters](#custom-converters)
+  - [Converters](#converters)
+  - [Nested Structs](#nested-structs)
 - [Examples](#examples)
 - [How It Works](#how-it-works)
 
@@ -311,7 +312,7 @@ type UserDTO struct {
 }
 ```
 
-### Custom Converters
+### Converters
 
 Create and register custom converters in your code:
 
@@ -363,6 +364,49 @@ type UserDTO struct {
 ```
 
 **Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
+
+#### Built-in Converters
+
+The following converters are automatically generated and available:
+
+- `TimeToJSString`: Converts `time.Time` to RFC3339 string format
+
+### Nested Structs
+
+The nested struct feature allows automatic mapping of complex nested structures without manual field-by-field copying. When a source struct contains fields that should map to other DTOs, you can use the `dto` tag to trigger automatic nested mapping:
+
+```go
+type UserDTO struct {
+	ID                  int64
+	Username            string
+	Pets                []PetDTO       `automapper:"dto=PetDTO"`
+	FeaturedAchievement AchievementDTO `automapper:"dto=AchievementDTO"`
+}
+
+//automapper:from=db.PetDB
+type PetDTO struct {
+	ID        int64
+	Name      string
+}
+
+//automapper:from=db.AchievementDB
+type AchievementDTO struct {
+	ID          int64
+	Title       string
+}
+```
+
+The dto tag can also be combined with other automapper options:
+
+```go
+// Just nested DTO
+Field DTO `automapper:"dto=TargetDTO"`
+
+// Nested DTO with custom field mapping
+Field DTO `automapper:"dto=TargetDTO,field=SourceFieldName"`
+
+// Cannot combine dto with converter (dto takes precedence)
+```
 
 ## Examples
 
@@ -463,17 +507,8 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 }
 ```
 
-## Built-in Converters
-
-The following converters are automatically generated and available:
-
-- `TimeToJSString`: Converts `time.Time` to RFC3339 string format
-
-## Custom Converter Registration
-
-Converter functions in your DTO package are automatically registered in the generated `init()` function if they follow the correct signature. The types are inferred from the function signature, so you don't need to specify them in configuration.
-
 ## Acknowledgments
 
 - [jennifer](https://github.com/dave/jennifer) - Go code generation library
+- Inspired by [sqlc](https://github.com/sqlc-dev/sqlc)
 - Inspired by AutoMapper in .NET
