@@ -11,7 +11,14 @@ import (
 )
 
 // GenerateMapFromMethod generates a MapFrom method for a DTO
-func GenerateMapFromMethod(f *jen.File, dto types.DTOMapping, source types.SourceStruct, sourceName, methodName string, cfg *config.Config, importMap map[string]string) {
+func GenerateMapFromMethod(
+	f *jen.File,
+	dto types.DTOMapping,
+	source types.SourceStruct,
+	sourceName, methodName string,
+	cfg *config.Config,
+	importMap map[string]string,
+) {
 	// Parse parameter type
 	paramType := ParseTypeRefForJen(sourceName, importMap)
 
@@ -31,7 +38,9 @@ func GenerateMapFromMethod(f *jen.File, dto types.DTOMapping, source types.Sourc
 }
 
 // buildMethodBody constructs the method body statements
-func buildMethodBody(dto types.DTOMapping, source types.SourceStruct, cfg *config.Config, importMap map[string]string) []jen.Code {
+func buildMethodBody(
+	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config, importMap map[string]string,
+) []jen.Code {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
 			jen.Return(jen.Qual("errors", "New").Call(jen.Lit("source is nil"))),
@@ -68,7 +77,9 @@ func buildMethodBody(dto types.DTOMapping, source types.SourceStruct, cfg *confi
 }
 
 // resolveSourceFieldName determines the source field name for a DTO field
-func resolveSourceFieldName(dtoField types.FieldInfo, source types.SourceStruct, cfg *config.Config) string {
+func resolveSourceFieldName(
+	dtoField types.FieldInfo, source types.SourceStruct, cfg *config.Config,
+) string {
 	if dtoField.FieldTag != "" {
 		return dtoField.FieldTag
 	}
@@ -85,17 +96,24 @@ func resolveSourceFieldName(dtoField types.FieldInfo, source types.SourceStruct,
 }
 
 // buildConverterMapping creates statements for converter-based field mapping with pointer handling
-func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string, importMap map[string]string) []jen.Code {
-	// Extract base types for the converter (converters always work on base types)
-	fromBaseType := sourceField.BaseType
-	toBaseType := ExtractBaseType(dtoField.Type)
+func buildConverterMapping(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	importMap map[string]string,
+) []jen.Code {
+	fromTypeStr := sourceField.Type
+	toTypeStr := dtoField.Type
 
 	// Check pointer semantics
 	srcIsPointer := sourceField.IsPointer
 	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
 
-	fromType := ParseTypeForJen(fromBaseType, importMap)
-	toType := ParseTypeForJen(toBaseType, importMap)
+	fromConvType := removePointerPrefix(fromTypeStr)
+	toConvType := removePointerPrefix(toTypeStr)
+
+	fromType := ParseTypeForJen(fromConvType, importMap)
+	toType := ParseTypeForJen(toConvType, importMap)
 
 	// Case 1: Source is pointer, needs dereferencing before conversion
 	if srcIsPointer {
@@ -162,7 +180,7 @@ func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldType
 		}
 	}
 
-	// Case 3: Both are values - original behavior
+	// Case 3: Both are values - direct converter call
 	return []jen.Code{
 		jen.Block(
 			jen.Var().Err().Error(),
@@ -180,8 +198,18 @@ func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldType
 	}
 }
 
+// removePointerPrefix removes only pointer prefix, keeping slice/array prefixes
+func removePointerPrefix(typeStr string) string {
+	if strings.HasPrefix(typeStr, "*") {
+		return typeStr[1:]
+	}
+	return typeStr
+}
+
 // buildFieldMapping creates statements for field mapping with pointer conversion
-func buildFieldMapping(dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string) []jen.Code {
+func buildFieldMapping(
+	dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string,
+) []jen.Code {
 	dtoIsPointer := strings.HasPrefix(dtoField.Type, "*")
 	srcIsPointer := sourceField.IsPointer
 

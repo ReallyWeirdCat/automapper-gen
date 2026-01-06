@@ -9,24 +9,30 @@ import (
 	"errors"
 	"fmt"
 	db "git.weirdcat.su/weirdcat/automapper-gen/example/db"
+	"sync"
 	"time"
 )
 
 // Converter type for type-safe conversions
 type Converter[From any, To any] func(From) (To, error)
 
-// Global converter registry
-var converters = make(map[string]interface{})
+// Global converter registry (thread-safe)
+var converters = make(map[string]any)
+var convertersMu sync.RWMutex
 
 // RegisterConverter registers a type-safe converter
 func RegisterConverter[From any, To any](name string, fn Converter[From, To]) {
+	convertersMu.Lock()
+	defer convertersMu.Unlock()
 	converters[name] = fn
 }
 
 // Convert performs a type-safe conversion using a registered converter
 func Convert[From any, To any](name string, value From) (To, error) {
 	var zero To
+	convertersMu.RLock()
 	converterIface, ok := converters[name]
+	convertersMu.RUnlock()
 	if !ok {
 		return zero, fmt.Errorf("converter %s not registered", name)
 	}
@@ -39,7 +45,11 @@ func Convert[From any, To any](name string, value From) (To, error) {
 
 func init() {
 	// Register TimeToString: time.Time -> string
-	RegisterConverter[time.Time, string]("TimeToString", TimeToJSString)
+	RegisterConverter("TimeToString", TimeToJSString)
+	// Register RoleEnum: string -> Role
+	RegisterConverter("RoleEnum", StrRoleToEnum)
+	// Register InterestEnums: []string -> []Interest
+	RegisterConverter("InterestEnums", StrInterestsToEnums)
 }
 
 // TimeToJSString converts time.Time to JavaScript ISO 8601 string
@@ -55,10 +65,24 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 
 	d.ID = src.ID
 	d.Username = src.Username
+	{
+		var err error
+		d.Role, err = Convert[string, Role]("RoleEnum", src.Role)
+		if err != nil {
+			return fmt.Errorf("converting field Role: %w", err)
+		}
+	}
 	if src.About != nil {
 		d.About = *src.About
 	}
 	// About: nil pointer will result in zero value
+	{
+		var err error
+		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		if err != nil {
+			return fmt.Errorf("converting field Interests: %w", err)
+		}
+	}
 	if src.Birthday != nil {
 		var err error
 		var result string

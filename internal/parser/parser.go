@@ -14,7 +14,9 @@ import (
 )
 
 // ParsePackage parses the main package and external packages
-func ParsePackage(pkgPath string, cfg *config.Config) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
+func ParsePackage(
+	pkgPath string, cfg *config.Config,
+) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
 	fset := token.NewFileSet()
 
 	// Parse main package
@@ -71,7 +73,14 @@ func ParsePackage(pkgPath string, cfg *config.Config) ([]types.DTOMapping, map[s
 }
 
 // parseDir parses a directory of Go files
-func parseDir(fset *token.FileSet, dir string, alias string, importPath string, isExternal bool, cfg *config.Config) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
+func parseDir(
+	fset *token.FileSet,
+	dir string,
+	alias string,
+	importPath string,
+	isExternal bool,
+	cfg *config.Config,
+) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go") && fi.Name() != cfg.Output
 	}, parser.ParseComments)

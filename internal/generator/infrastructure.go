@@ -18,9 +18,10 @@ func GenerateInfrastructure(f *jen.File, cfg *config.Config, importMap map[strin
 
 	f.Line()
 
-	// Global registry
-	f.Comment("Global converter registry")
-	f.Var().Id("converters").Op("=").Make(jen.Map(jen.String()).Interface())
+	// Global registry with mutex for thread-safety
+	f.Comment("Global converter registry (thread-safe)")
+	f.Var().Id("converters").Op("=").Make(jen.Map(jen.String()).Any())
+	f.Var().Id("convertersMu").Qual("sync", "RWMutex")
 
 	f.Line()
 
@@ -33,6 +34,8 @@ func GenerateInfrastructure(f *jen.File, cfg *config.Config, importMap map[strin
 		jen.Id("name").String(),
 		jen.Id("fn").Id("Converter").Types(jen.Id("From"), jen.Id("To")),
 	).Block(
+		jen.Id("convertersMu").Dot("Lock").Call(),
+		jen.Defer().Id("convertersMu").Dot("Unlock").Call(),
 		jen.Id("converters").Index(jen.Id("name")).Op("=").Id("fn"),
 	)
 
@@ -48,7 +51,9 @@ func GenerateInfrastructure(f *jen.File, cfg *config.Config, importMap map[strin
 		jen.Id("value").Id("From"),
 	).Params(jen.Id("To"), jen.Error()).Block(
 		jen.Var().Id("zero").Id("To"),
+		jen.Id("convertersMu").Dot("RLock").Call(),
 		jen.List(jen.Id("converterIface"), jen.Id("ok")).Op(":=").Id("converters").Index(jen.Id("name")),
+		jen.Id("convertersMu").Dot("RUnlock").Call(),
 		jen.If(jen.Op("!").Id("ok")).Block(
 			jen.Return(jen.Id("zero"), jen.Qual("fmt", "Errorf").Call(
 				jen.Lit("converter %s not registered"),
@@ -71,12 +76,12 @@ func GenerateInfrastructure(f *jen.File, cfg *config.Config, importMap map[strin
 
 	// Generate init with default converters
 	if cfg.GenerateInit && len(cfg.DefaultConverters) > 0 {
-		generateInit(f, cfg, importMap)
+		generateInit(f, cfg)
 	}
 }
 
 // generateInit generates the init function with default converters
-func generateInit(f *jen.File, cfg *config.Config, importMap map[string]string) {
+func generateInit(f *jen.File, cfg *config.Config) {
 	initStatements := []jen.Code{}
 
 	for _, conv := range cfg.DefaultConverters {
@@ -84,12 +89,8 @@ func generateInit(f *jen.File, cfg *config.Config, importMap map[string]string) 
 			jen.Comment(fmt.Sprintf("Register %s: %s -> %s", conv.Name, conv.From, conv.To)),
 		)
 
-		// Parse types to generate proper type parameters
-		fromType := ParseTypeForJen(conv.From, importMap)
-		toType := ParseTypeForJen(conv.To, importMap)
-
 		initStatements = append(initStatements,
-			jen.Id("RegisterConverter").Types(fromType, toType).Call(
+			jen.Id("RegisterConverter").Call(
 				jen.Lit(conv.Name),
 				jen.Id(conv.Function),
 			),

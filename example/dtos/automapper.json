@@ -7,6 +7,18 @@
       "to": "string",
       "name": "TimeToString",
       "function": "TimeToJSString"
+    },
+    {
+      "from": "string",
+      "to": "Role",
+      "name": "RoleEnum",
+      "function": "StrRoleToEnum"
+    },
+    {
+      "from": "[]string",
+      "to": "[]Interest",
+      "name": "InterestEnums",
+      "function": "StrInterestsToEnums"
     }
   ],
   "generateInit": true,
