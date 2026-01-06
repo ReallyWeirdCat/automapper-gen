@@ -80,8 +80,10 @@ Create an `automapper.json` file in your DTO package directory:
   ]
 }
 ```
-
-**Note**: External packages are loaded directly from Go's module cache. Use `localPath` for development to test local changes.
+`package` needs to match the name of the package where your destination structs/DTOs are located.
+Note that since your source structs (e.g. database models) are most likely in a different package, we have to specify the package in `externalPackages`. In this example we use a database package from the same go module which is located in `./example/db`. The `alias` option helps to avoid name collisions.
+You may also use the `localPath` parameter for development if you need to.
+**Note**: External packages are normally loaded directly from Go's module cache. The package simply needs to be installed and added to `externalPackages` via the `importPath`.
 
 ### 2. Define Your Structs
 
