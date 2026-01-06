@@ -4,5 +4,7 @@ package dtos
 type UserDTO struct {
 	ID        int64
 	Username  string
-	CreatedAt string `automapper:"converter=jsTime"`
+	About     string  // pointer mismatch!
+	Birthday  *string `automapper:"converter=TimeToString"`
+	CreatedAt string `automapper:"converter=TimeToString"`
 }
