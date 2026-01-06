@@ -74,6 +74,22 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	}
 	// About: nil pointer will result in zero value
 	{
+		d.Pets = make([]PetDTO, len(src.Pets))
+		for i, item := range src.Pets {
+			if err := d.Pets[i].MapFromPetDB(&item); err != nil {
+				return fmt.Errorf("mapping nested field Pets[%d]: %w", i, err)
+			}
+		}
+	}
+	if src.FeaturedAchievement != nil {
+		var nested AchievementDTO
+		if err := nested.MapFromAchievementDB(src.FeaturedAchievement); err != nil {
+			return fmt.Errorf("mapping nested field FeaturedAchievement: %w", err)
+		}
+		d.FeaturedAchievement = nested
+	}
+	// FeaturedAchievement: nil pointer will result in zero value
+	{
 		var err error
 		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
 		if err != nil {
@@ -90,6 +106,62 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
+	{
+		var err error
+		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("converting field CreatedAt: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// MapFromPetDB maps from db.PetDB to PetDTO
+func (d *PetDTO) MapFromPetDB(src *db.PetDB) error {
+	if src == nil {
+		return errors.New("source is nil")
+	}
+
+	d.ID = src.ID
+	d.Name = src.Name
+	{
+		var err error
+		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		if err != nil {
+			return fmt.Errorf("converting field Interests: %w", err)
+		}
+	}
+	if src.Birthday != nil {
+		var err error
+		var result string
+		result, err = Convert[time.Time, string]("TimeToString", *src.Birthday)
+		if err != nil {
+			return fmt.Errorf("converting field Birthday: %w", err)
+		}
+		d.Birthday = &result
+	}
+	// Birthday: nil pointer will result in nil
+	{
+		var err error
+		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("converting field CreatedAt: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// MapFromAchievementDB maps from db.AchievementDB to AchievementDTO
+func (d *AchievementDTO) MapFromAchievementDB(src *db.AchievementDB) error {
+	if src == nil {
+		return errors.New("source is nil")
+	}
+
+	d.ID = src.ID
+	d.Title = src.Title
+	d.Description = src.Description
 	{
 		var err error
 		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
