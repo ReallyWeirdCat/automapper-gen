@@ -4,7 +4,7 @@
 
 A CLI utility that generates reflection-free Go code for mapping structs with type conversion support.
 
-> **⚠️ Development Status**: This project is in early development and serves primarily as a proof of concept. While functional, it's still rough around the edges and lacks comprehensive testing. Use in production at your own risk.
+> **⚠️ Development Status**: This project is in early development. There are yet no integrated tests, and many things may change in the near future. Use in production at your own risk (and if you do, please tell me if you like it).
 
 ## Features
 
