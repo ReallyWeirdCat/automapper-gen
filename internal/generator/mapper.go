@@ -84,17 +84,89 @@ func resolveSourceFieldName(dtoField types.FieldInfo, source types.SourceStruct,
 	return dtoField.Name
 }
 
-// buildConverterMapping creates statements for converter-based field mapping
+// buildConverterMapping creates statements for converter-based field mapping with pointer handling
 func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string, importMap map[string]string) []jen.Code {
-	fromType := ParseTypeForJen(sourceField.BaseType, importMap)
-	toType := ParseTypeForJen(ExtractBaseType(dtoField.Type), importMap)
+	// Extract base types for the converter (converters always work on base types)
+	fromBaseType := sourceField.BaseType
+	toBaseType := ExtractBaseType(dtoField.Type)
 
+	// Check pointer semantics
+	srcIsPointer := sourceField.IsPointer
+	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
+
+	fromType := ParseTypeForJen(fromBaseType, importMap)
+	toType := ParseTypeForJen(toBaseType, importMap)
+
+	// Case 1: Source is pointer, needs dereferencing before conversion
+	if srcIsPointer {
+		if dstIsPointer {
+			// *T -> dereference -> converter -> T -> take address -> *T
+			return []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Var().Err().Error(),
+					jen.Var().Id("result").Add(toType),
+					jen.List(jen.Id("result"), jen.Err()).Op("=").Id("Convert").Types(fromType, toType).Call(
+						jen.Lit(dtoField.ConverterTag),
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+					jen.If(jen.Err().Op("!=").Nil()).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+							jen.Err(),
+						)),
+					),
+					jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in nil", dtoField.Name)),
+			}
+		} else {
+			// *T -> dereference -> converter -> T
+			return []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Var().Err().Error(),
+					jen.List(jen.Id("d").Dot(dtoField.Name), jen.Err()).Op("=").Id("Convert").Types(fromType, toType).Call(
+						jen.Lit(dtoField.ConverterTag),
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+					jen.If(jen.Err().Op("!=").Nil()).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+							jen.Err(),
+						)),
+					),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in zero value", dtoField.Name)),
+			}
+		}
+	}
+
+	// Case 2: Source is value, destination is pointer
+	if dstIsPointer {
+		// T -> converter -> T -> take address -> *T
+		return []jen.Code{
+			jen.Block(
+				jen.Var().Err().Error(),
+				jen.Var().Id("result").Add(toType),
+				jen.List(jen.Id("result"), jen.Err()).Op("=").Id("Convert").Types(fromType, toType).Call(
+					jen.Lit(dtoField.ConverterTag),
+					jen.Id("src").Dot(sourceFieldName),
+				),
+				jen.If(jen.Err().Op("!=").Nil()).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+						jen.Err(),
+					)),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+			),
+		}
+	}
+
+	// Case 3: Both are values - original behavior
 	return []jen.Code{
 		jen.Block(
 			jen.Var().Err().Error(),
-			jen.List(jen.Id("d").Dot(dtoField.Name), jen.Err()).Op("=").Id("Convert").Types(
-				fromType, toType,
-			).Call(
+			jen.List(jen.Id("d").Dot(dtoField.Name), jen.Err()).Op("=").Id("Convert").Types(fromType, toType).Call(
 				jen.Lit(dtoField.ConverterTag),
 				jen.Id("src").Dot(sourceFieldName),
 			),
