@@ -4,7 +4,7 @@
 
 A CLI utility that generates reflection-free Go code for mapping structs with type conversion support.
 
-> **⚠️ Development Status**: This project is in early development and serves primarily as a proof of concept. While functional, it's still rough around the edges and lacks comprehensive testing. Use in production at your own risk.
+> **⚠️ Development Status**: This project is in early development. There are yet no integrated tests, and many things may change in the near future. Use in production at your own risk (and if you do, please tell me if you like it).
 
 ## Features
 
@@ -64,30 +64,21 @@ Create an `automapper.json` file in your DTO package directory:
 {
   "package": "dtos",
   "output": "automappers.go",
-  "fieldNameTransform": "snake_to_camel",
-  "generateInit": true,
-  "defaultConverters": [
-    {
-      "from": "time.Time",
-      "to": "string",
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    }
-  ],
   "externalPackages": [
     {
       "alias": "db",
-      "importPath": "github.com/yourorg/yourproject/internal/db"
+      "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db",
+      "localPath": "../db"
     }
   ]
 }
 ```
 
-**Note**: External packages are loaded directly from Go's module cache. No local paths needed!
+**Note**: External packages are loaded directly from Go's module cache. Use `localPath` for development to test local changes.
 
 ### 2. Define Your Structs
 
-**Database Model** (`internal/db/models.go`):
+**Database Model** (`db/models.go`):
 ```go
 package db
 
@@ -103,7 +94,7 @@ type UserDB struct {
 }
 ```
 
-**DTO Model** (`internal/dtos/user.go`):
+**DTO Model** (`dtos/user.go`):
 ```go
 package dtos
 
@@ -112,8 +103,8 @@ type UserDTO struct {
     ID        int64
     Username  string
     Email     string
-    CreatedAt string `automapper:"converter=TimeToString"`
-    UpdatedAt string `automapper:"converter=TimeToString"`
+    CreatedAt string `automapper:"converter=TimeToJSString"`
+    UpdatedAt string `automapper:"converter=TimeToJSString"`
 }
 ```
 
@@ -132,8 +123,8 @@ package main
 import (
     "fmt"
     "time"
-    "yourproject/internal/db"
-    "yourproject/internal/dtos"
+    "yourproject/db"
+    "yourproject/dtos"
 )
 
 func main() {
@@ -158,6 +149,8 @@ func main() {
 }
 ```
 
+**Note**: The `TimeToJSString` converter is built-in and automatically available for use in struct tags.
+
 ## Configuration
 
 ### Configuration File (`automapper.json`)
@@ -168,24 +161,7 @@ func main() {
 | `output` | string | No | Output filename (default: "automappers.go") |
 | `fieldNameTransform` | string | No | Field name transformation ("snake_to_camel", default) |
 | `nilPointersForNull` | bool | No | Use nil pointers for null values |
-| `generateInit` | bool | No | Generate init() function for converters |
-| `defaultConverters` | array | No | Default converter registrations |
 | `externalPackages` | array | No | External packages to parse |
-
-### Default Converters
-
-```json
-{
-  "defaultConverters": [
-    {
-      "from": "time.Time",
-      "to": "string",
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    }
-  ]
-}
-```
 
 ### External Packages
 
@@ -250,15 +226,6 @@ type User struct {
 {
   "package": "dto",
   "output": "automappers.go",
-  "defaultConverters": [
-    {
-      "from": "time.Time",
-      "to": "string",
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    }
-  ],
-  "generateInit": true,
   "externalPackages": [
     {
       "alias": "db",
@@ -276,7 +243,7 @@ package dto
 type UserDTO struct {
     ID        int64
     Username  string
-    CreatedAt string `automapper:"converter=TimeToString"`
+    CreatedAt string `automapper:"converter=TimeToJSString"`
 }
 ```
 
@@ -333,40 +300,69 @@ type UserDTO struct {
 #### Field Converter
 ```go
 type UserDTO struct {
-    CreatedAt string `automapper:"converter=TimeToString"`
+    CreatedAt string `automapper:"converter=TimeToJSString"`
 }
 ```
 
 #### Combined Tags
 ```go
 type UserDTO struct {
-    BirthDate string `automapper:"field=date_of_birth,converter=TimeToString"`
+    BirthDate string `automapper:"field=date_of_birth,converter=TimeToJSString"`
 }
 ```
 
 ### Custom Converters
 
-Register custom converters in your code:
+Create and register custom converters in your code:
 
 ```go
-func init() {
-    // Register a custom UUID to string converter
-    dtos.RegisterConverter[uuid.UUID, string](
-        "UUIDToString",
-        func(u uuid.UUID) (string, error) {
-            return u.String(), nil
-        },
-    )
+package dtos
+
+import (
+    "fmt"
+    "git.weirdcat.su/weirdcat/automapper-gen/example/types"
+)
+
+// Define your converter function
+func StrRoleToEnum(role string) (types.Role, error) {
+    switch role {
+    case "admin":
+        return types.RoleAdmin, nil
+    case "user":
+        return types.RoleUser, nil
+    default:
+        return types.RoleGuest, fmt.Errorf("unknown role: %s", role)
+    }
+}
+
+func StrInterestsToEnums(interests []string) ([]types.Interest, error) {
+    result := make([]types.Interest, len(interests))
+    for i, interest := range interests {
+        switch interest {
+        case "coding":
+            result[i] = types.InterestCoding
+        case "music":
+            result[i] = types.InterestMusic
+        default:
+            return nil, fmt.Errorf("unknown interest: %s", interest)
+        }
+    }
+    return result, nil
 }
 ```
+
+The generated `automappers.go` will automatically include an `init()` function that registers these converters based on their function signatures.
 
 Use in your DTOs:
 
 ```go
 type UserDTO struct {
-    ID string `automapper:"converter=UUIDToString"`
+    Role      Role      `automapper:"converter=StrRoleToEnum"`
+    Interests []Interest `automapper:"converter=StrInterestsToEnums"`
 }
 ```
+
+**Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
 
 ## Examples
 
@@ -427,7 +423,7 @@ type ProductDTO struct {
     Id        int64
     Name      string
     Price     float64
-    CreatedAt string `automapper:"converter=TimeToString"`
+    CreatedAt string `automapper:"converter=TimeToJSString"`
 }
 ```
 
@@ -450,9 +446,9 @@ var converters = make(map[string]interface{})
 func RegisterConverter[From any, To any](name string, fn Converter[From, To])
 func Convert[From any, To any](name string, value From) (To, error)
 
-// Init function (if generateInit: true)
-func init() {
-    RegisterConverter[time.Time, string]("TimeToString", TimeToJSString)
+// Built-in converter (always available)
+func TimeToJSString(t time.Time) (string, error) {
+    return t.Format(time.RFC3339), nil
 }
 
 // MapFrom methods
@@ -462,10 +458,20 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
     }
     d.ID = src.ID
     d.Username = src.Username
-    // ... field mappings
+    // ... field mappings with converters
     return nil
 }
 ```
+
+## Built-in Converters
+
+The following converters are automatically generated and available:
+
+- `TimeToJSString`: Converts `time.Time` to RFC3339 string format
+
+## Custom Converter Registration
+
+Converter functions in your DTO package are automatically registered in the generated `init()` function if they follow the correct signature. The types are inferred from the function signature, so you don't need to specify them in configuration.
 
 ## Acknowledgments
 
