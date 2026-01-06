@@ -65,6 +65,12 @@ Create an `automapper.json` file in your DTO package directory:
 {
   "package": "dtos",
   "output": "automappers.go",
+  "defaultConverters": [
+    {
+      "name": "TimeToString",
+      "function": "TimeToJSString"
+    },
+  ],
   "externalPackages": [
     {
       "alias": "db",
@@ -150,7 +156,7 @@ func main() {
 }
 ```
 
-**Note**: The `TimeToJSString` converter is built-in and automatically available for use in struct tags.
+**Note**: The `TimeToJSString` converter function is built-in.
 
 ## Configuration
 
