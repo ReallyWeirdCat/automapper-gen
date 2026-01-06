@@ -27,11 +27,11 @@ type UserDTO struct {
 	Username            string
 	Role                Role `automapper:"converter=RoleEnum"`
 	About               string
-	Pets                []PetDTO        `automapper:"dto=PetDTO"`
+	Pets                []PetDTO       `automapper:"dto=PetDTO"`
 	FeaturedAchievement AchievementDTO `automapper:"dto=AchievementDTO"`
-	Interests           []Interest      `automapper:"converter=InterestEnums"`
-	Birthday            *string         `automapper:"converter=TimeToString"`
-	CreatedAt           string          `automapper:"converter=TimeToString"`
+	Interests           []Interest     `automapper:"converter=InterestEnums"`
+	Birthday            *string        `automapper:"converter=TimeToString"`
+	CreatedAt           string         `automapper:"converter=TimeToString"`
 }
 
 //automapper:from=db.PetDB

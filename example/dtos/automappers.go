@@ -81,7 +81,14 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 			}
 		}
 	}
-	// FeaturedAchievement: not found in source, will be zero value
+	if src.FeaturedAchievement != nil {
+		var nested AchievementDTO
+		if err := nested.MapFromAchievementDB(src.FeaturedAchievement); err != nil {
+			return fmt.Errorf("mapping nested field FeaturedAchievement: %w", err)
+		}
+		d.FeaturedAchievement = nested
+	}
+	// FeaturedAchievement: nil pointer will result in zero value
 	{
 		var err error
 		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)

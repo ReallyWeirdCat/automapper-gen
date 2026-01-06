@@ -22,6 +22,7 @@ func main() {
 		{
 			ID:        14,
 			Name:      "Froggy",
+			Birthday:  &birthday,
 			Interests: []string{"movies", "painting"},
 		},
 	}
@@ -34,16 +35,16 @@ func main() {
 
 	// Pretend that we got this from our database
 	user := db.UserDB{
-		ID:                 69,
-		Username:           "Nice",
-		Password:           "123",
-		Role:               "security",
-		Interests:          []string{"cooking", "movies"},
-		Pets:               pets,
+		ID:                  69,
+		Username:            "Nice",
+		Password:            "123",
+		Role:                "security",
+		Interests:           []string{"cooking", "movies"},
+		Pets:                pets,
 		FeaturedAchievement: &achievement,
-		About:              nil,
-		Birthday:           &birthday,
-		CreatedAt:          time.Now(),
+		About:               nil,
+		Birthday:            &birthday,
+		CreatedAt:           time.Now(),
 	}
 
 	// Let's convert the model to a DTO via the generated method
@@ -57,7 +58,8 @@ func main() {
 
 	fmt.Printf("User: %+v\n", dto)
 	// User: {ID:69 Username:Nice Role:4 About: Pets:[{ID:23 Name:Hamsterine Interests:[0 2] Birthda
-	// y:<nil> CreatedAt:0001-01-01T00:00:00Z} {ID:14 Name:Froggy Interests:[4 3] Birthday:<nil> Cre
-	// atedAt:0001-01-01T00:00:00Z}] FeaturedAchievement:{ID:0 Title: Description: CreatedAt:} Inter
-	// ests:[2 4] Birthday:0xc000114000 CreatedAt:2026-01-06T22:47:58+03:00}
+	// y:<nil> CreatedAt:0001-01-01T00:00:00Z} {ID:14 Name:Froggy Interests:[4 3] Birthday:0xc00011c
+	// 020 CreatedAt:0001-01-01T00:00:00Z}] FeaturedAchievement:{ID:342 Title:Employee of the month
+	// Description:Wow what a chad CreatedAt:0001-01-01T00:00:00Z} Interests:[2 4] Birthday:0xc00011
+	// c030 CreatedAt:2026-01-06T22:59:52+03:00}
 }
