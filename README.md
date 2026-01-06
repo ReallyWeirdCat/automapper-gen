@@ -352,6 +352,35 @@ func StrInterestsToEnums(interests []string) ([]types.Interest, error) {
 }
 ```
 
+Update your `automapper.json` to include your converters:
+
+```jsonc
+{
+  "package": "dtos",
+  "output": "automappers.go",
+  "defaultConverters": [
+    {
+      "name": "TimeToString",
+      "function": "TimeToJSString"
+    },
+    {
+      "name": "RoleEnum",  // the name used in tags
+      "function": "StrRoleToEnum"  // the function we created for conversion
+    },
+    {
+      "name": "InterestEnums",
+      "function": "StrInterestsToEnums"
+    }
+  ],
+  "externalPackages": [
+    {
+      "alias": "db",
+      "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db"
+    }
+  ]
+}
+```
+
 The generated `automappers.go` will automatically include an `init()` function that registers these converters based on their function signatures.
 
 Use in your DTOs:
