@@ -86,16 +86,18 @@ func resolveSourceFieldName(dtoField types.FieldInfo, source types.SourceStruct,
 
 // buildConverterMapping creates statements for converter-based field mapping with pointer handling
 func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string, importMap map[string]string) []jen.Code {
-	// Extract base types for the converter (converters always work on base types)
-	fromBaseType := sourceField.BaseType
-	toBaseType := ExtractBaseType(dtoField.Type)
+	fromTypeStr := sourceField.Type
+	toTypeStr := dtoField.Type
 
 	// Check pointer semantics
 	srcIsPointer := sourceField.IsPointer
 	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
 
-	fromType := ParseTypeForJen(fromBaseType, importMap)
-	toType := ParseTypeForJen(toBaseType, importMap)
+	fromConvType := removePointerPrefix(fromTypeStr)
+	toConvType := removePointerPrefix(toTypeStr)
+
+	fromType := ParseTypeForJen(fromConvType, importMap)
+	toType := ParseTypeForJen(toConvType, importMap)
 
 	// Case 1: Source is pointer, needs dereferencing before conversion
 	if srcIsPointer {
@@ -162,7 +164,7 @@ func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldType
 		}
 	}
 
-	// Case 3: Both are values - original behavior
+	// Case 3: Both are values - direct converter call
 	return []jen.Code{
 		jen.Block(
 			jen.Var().Err().Error(),
@@ -178,6 +180,14 @@ func buildConverterMapping(dtoField types.FieldInfo, sourceField types.FieldType
 			),
 		),
 	}
+}
+
+// removePointerPrefix removes only pointer prefix, keeping slice/array prefixes
+func removePointerPrefix(typeStr string) string {
+	if strings.HasPrefix(typeStr, "*") {
+		return typeStr[1:]
+	}
+	return typeStr
 }
 
 // buildFieldMapping creates statements for field mapping with pointer conversion

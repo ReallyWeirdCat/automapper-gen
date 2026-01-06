@@ -15,11 +15,13 @@ func main() {
 
 	// Pretend that we got this from our database
 	user := db.UserDB{
-		ID: 69,
-		Username: "Nice",
-		Password: "123",
-		About: nil,
-		Birthday: &birthday,
+		ID:        69,
+		Username:  "Nice",
+		Password:  "123",
+		Role:      "security",
+		Interests: []string{"cooking", "movies"},
+		About:     nil,
+		Birthday:  &birthday,
 		CreatedAt: time.Now(),
 	}
 
@@ -33,5 +35,5 @@ func main() {
 	}
 
 	fmt.Printf("User: %+v\n", dto)
-	// User: {ID:69 Username:Nice About: Birthday:0xc000014070 CreatedAt:2026-01-06T05:05:23+03:00}
+    // User: {ID:69 Username:Nice Role:4 About: Interests:[2 4] Birthday:0xc000014070 CreatedAt:2026-01-06T19:54:25+03:00}
 }
