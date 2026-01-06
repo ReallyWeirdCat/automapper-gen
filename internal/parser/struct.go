@@ -46,7 +46,7 @@ func ParseFields(structType *ast.StructType) []types.FieldInfo {
 			fieldInfo.Tag = tag
 
 			if strings.Contains(tag, "automapper:") {
-				fieldInfo.ConverterTag, fieldInfo.FieldTag, fieldInfo.Ignore = parseAutomapperTag(tag)
+				fieldInfo.ConverterTag, fieldInfo.FieldTag, fieldInfo.NestedDTO, fieldInfo.Ignore = parseAutomapperTag(tag)
 			}
 		}
 
@@ -57,7 +57,7 @@ func ParseFields(structType *ast.StructType) []types.FieldInfo {
 }
 
 // parseAutomapperTag parses the automapper struct tag
-func parseAutomapperTag(tag string) (converter, field string, ignore bool) {
+func parseAutomapperTag(tag string) (converter, field, nestedDTO string, ignore bool) {
 	start := strings.Index(tag, `automapper:"`)
 	if start == -1 {
 		return
@@ -75,8 +75,8 @@ func parseAutomapperTag(tag string) (converter, field string, ignore bool) {
 		return
 	}
 
-	parts := strings.Split(automapperTag, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(automapperTag, ",")
+	for part := range parts {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) == 2 {
 			key := strings.TrimSpace(kv[0])
@@ -87,6 +87,8 @@ func parseAutomapperTag(tag string) (converter, field string, ignore bool) {
 				converter = value
 			case "field":
 				field = value
+			case "dto":
+				nestedDTO = value
 			}
 		}
 	}

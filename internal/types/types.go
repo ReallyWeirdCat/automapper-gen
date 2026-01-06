@@ -16,6 +16,7 @@ type FieldInfo struct {
 	ConverterTag string
 	FieldTag     string
 	Ignore       bool
+	NestedDTO    string
 }
 
 // SourceStruct represents a source struct that can be mapped from

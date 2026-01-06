@@ -23,11 +23,30 @@ const (
 
 //automapper:from=db.UserDB
 type UserDTO struct {
+	ID                  int64
+	Username            string
+	Role                Role `automapper:"converter=RoleEnum"`
+	About               string
+	Pets                []PetDTO        `automapper:"dto=PetDTO"`
+	FeaturedAchievement AchievementDTO `automapper:"dto=AchievementDTO"`
+	Interests           []Interest      `automapper:"converter=InterestEnums"`
+	Birthday            *string         `automapper:"converter=TimeToString"`
+	CreatedAt           string          `automapper:"converter=TimeToString"`
+}
+
+//automapper:from=db.PetDB
+type PetDTO struct {
 	ID        int64
-	Username  string
-	Role      Role       `automapper:"converter=RoleEnum"`
-	About     string     // pointer mismatch!
+	Name      string
 	Interests []Interest `automapper:"converter=InterestEnums"`
 	Birthday  *string    `automapper:"converter=TimeToString"`
 	CreatedAt string     `automapper:"converter=TimeToString"`
+}
+
+//automapper:from=db.AchievementDB
+type AchievementDTO struct {
+	ID          int64
+	Title       string
+	Description string
+	CreatedAt   string `automapper:"converter=TimeToString"`
 }

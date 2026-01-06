@@ -25,7 +25,7 @@ func GenerateMapFromMethod(
 	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
 
 	// Build method body
-	methodBody := buildMethodBody(dto, source, cfg, importMap)
+	methodBody := buildMethodBody(dto, source, sourceName, cfg, importMap)
 
 	// Generate method
 	f.Func().Params(
@@ -39,7 +39,11 @@ func GenerateMapFromMethod(
 
 // buildMethodBody constructs the method body statements
 func buildMethodBody(
-	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config, importMap map[string]string,
+	dto types.DTOMapping,
+	source types.SourceStruct,
+	sourceName string,
+	cfg *config.Config,
+	importMap map[string]string,
 ) []jen.Code {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
@@ -64,7 +68,10 @@ func buildMethodBody(
 			continue
 		}
 
-		if dtoField.ConverterTag != "" {
+		// Nested DTO mapping takes precedence
+		if dtoField.NestedDTO != "" {
+			statements = append(statements, buildNestedDTOMapping(dtoField, sourceField, sourceFieldName, sourceName)...)
+		} else if dtoField.ConverterTag != "" {
 			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, importMap)...)
 		} else {
 			// Check for pointer mismatch and handle accordingly
@@ -93,6 +100,224 @@ func resolveSourceFieldName(
 	}
 
 	return dtoField.Name
+}
+
+// buildNestedDTOMapping creates statements for nested DTO mapping with pointer and slice handling
+func buildNestedDTOMapping(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	fullSourceName string,
+) []jen.Code {
+	dtoTypeName := dtoField.NestedDTO
+	sourceTypeName := sourceField.BaseType
+
+	// Determine the MapFrom method name based on source type
+	methodName := "MapFrom" + ExtractTypeNameWithoutPackage(sourceTypeName)
+
+	dtoIsPointer := strings.HasPrefix(dtoField.Type, "*")
+	dtoIsSlice := strings.HasPrefix(dtoField.Type, "[]")
+	srcIsPointer := sourceField.IsPointer
+	srcIsSlice := sourceField.IsSlice
+
+	// Handle slice to slice mapping
+	if dtoIsSlice && srcIsSlice {
+		return buildNestedSliceMapping(dtoField, sourceField, sourceFieldName, dtoTypeName, methodName)
+	}
+
+	// Handle pointer to pointer
+	if dtoIsPointer && srcIsPointer {
+		return []jen.Code{
+			jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+				jen.Id("nested").Op(":=").Op("&").Id(dtoTypeName).Values(),
+				jen.If(
+					jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Id("src").Dot(sourceFieldName)),
+					jen.Err().Op("!=").Nil(),
+				).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("mapping nested field %s: %%w", dtoField.Name)),
+						jen.Err(),
+					)),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Id("nested"),
+			),
+			jen.Comment(fmt.Sprintf("// %s: nil pointer will result in nil", dtoField.Name)),
+		}
+	}
+
+	// Handle pointer to value
+	if !dtoIsPointer && srcIsPointer {
+		return []jen.Code{
+			jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+				jen.Var().Id("nested").Id(dtoTypeName),
+				jen.If(
+					jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Id("src").Dot(sourceFieldName)),
+					jen.Err().Op("!=").Nil(),
+				).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("mapping nested field %s: %%w", dtoField.Name)),
+						jen.Err(),
+					)),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Id("nested"),
+			),
+			jen.Comment(fmt.Sprintf("// %s: nil pointer will result in zero value", dtoField.Name)),
+		}
+	}
+
+	// Handle value to pointer
+	if dtoIsPointer && !srcIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("nested").Op(":=").Op("&").Id(dtoTypeName).Values(),
+				jen.If(
+					jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Op("&").Id("src").Dot(sourceFieldName)),
+					jen.Err().Op("!=").Nil(),
+				).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("mapping nested field %s: %%w", dtoField.Name)),
+						jen.Err(),
+					)),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Id("nested"),
+			),
+		}
+	}
+
+	// Handle value to value (default case)
+	return []jen.Code{
+		jen.Block(
+			jen.Var().Id("nested").Id(dtoTypeName),
+			jen.If(
+				jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Op("&").Id("src").Dot(sourceFieldName)),
+				jen.Err().Op("!=").Nil(),
+			).Block(
+				jen.Return(jen.Qual("fmt", "Errorf").Call(
+					jen.Lit(fmt.Sprintf("mapping nested field %s: %%w", dtoField.Name)),
+					jen.Err(),
+				)),
+			),
+			jen.Id("d").Dot(dtoField.Name).Op("=").Id("nested"),
+		),
+	}
+}
+
+// buildNestedSliceMapping handles slice to slice nested DTO mappings
+func buildNestedSliceMapping(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	dtoTypeName string,
+	methodName string,
+) []jen.Code {
+	// Extract slice element types
+	dtoElemType := strings.TrimPrefix(dtoField.Type, "[]")
+	srcElemType := strings.TrimPrefix(sourceField.Type, "[]")
+
+	dtoElemIsPointer := strings.HasPrefix(dtoElemType, "*")
+	srcElemIsPointer := strings.HasPrefix(srcElemType, "*")
+
+	// Clean DTO type name if needed (remove pointer prefix if present in the DTO field type)
+	cleanDtoTypeName := strings.TrimPrefix(dtoTypeName, "*")
+
+	// Case 1: []T -> []DTO
+	if !srcElemIsPointer && !dtoElemIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("d").Dot(dtoField.Name).Op("=").Make(jen.Index().Id(cleanDtoTypeName), jen.Len(jen.Id("src").Dot(sourceFieldName))),
+				jen.For(jen.List(jen.Id("i"), jen.Id("item")).Op(":=").Range().Id("src").Dot(sourceFieldName)).Block(
+					jen.If(
+						jen.Err().Op(":=").Id("d").Dot(dtoField.Name).Index(jen.Id("i")).Dot(methodName).Call(jen.Op("&").Id("item")),
+						jen.Err().Op("!=").Nil(),
+					).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("mapping nested field %s[%%d]: %%w", dtoField.Name)),
+							jen.Id("i"),
+							jen.Err(),
+						)),
+					),
+				),
+			),
+		}
+	}
+
+	// Case 2: []*T -> []*DTO
+	if srcElemIsPointer && dtoElemIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("d").Dot(dtoField.Name).Op("=").Make(jen.Index().Op("*").Id(cleanDtoTypeName), jen.Len(jen.Id("src").Dot(sourceFieldName))),
+				jen.For(jen.List(jen.Id("i"), jen.Id("item")).Op(":=").Range().Id("src").Dot(sourceFieldName)).Block(
+					jen.If(jen.Id("item").Op("!=").Nil()).Block(
+						jen.Id("nested").Op(":=").Op("&").Id(cleanDtoTypeName).Values(),
+						jen.If(
+							jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Id("item")),
+							jen.Err().Op("!=").Nil(),
+						).Block(
+							jen.Return(jen.Qual("fmt", "Errorf").Call(
+								jen.Lit(fmt.Sprintf("mapping nested field %s[%%d]: %%w", dtoField.Name)),
+								jen.Id("i"),
+								jen.Err(),
+							)),
+						),
+						jen.Id("d").Dot(dtoField.Name).Index(jen.Id("i")).Op("=").Id("nested"),
+					),
+				),
+			),
+		}
+	}
+
+	// Case 3: []T -> []*DTO
+	if !srcElemIsPointer && dtoElemIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("d").Dot(dtoField.Name).Op("=").Make(jen.Index().Op("*").Id(cleanDtoTypeName), jen.Len(jen.Id("src").Dot(sourceFieldName))),
+				jen.For(jen.List(jen.Id("i"), jen.Id("item")).Op(":=").Range().Id("src").Dot(sourceFieldName)).Block(
+					jen.Id("nested").Op(":=").Op("&").Id(cleanDtoTypeName).Values(),
+					jen.If(
+						jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Op("&").Id("item")),
+						jen.Err().Op("!=").Nil(),
+					).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("mapping nested field %s[%%d]: %%w", dtoField.Name)),
+							jen.Id("i"),
+							jen.Err(),
+						)),
+					),
+					jen.Id("d").Dot(dtoField.Name).Index(jen.Id("i")).Op("=").Id("nested"),
+				),
+			),
+		}
+	}
+
+	// Case 4: []*T -> []DTO
+	if srcElemIsPointer && !dtoElemIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("d").Dot(dtoField.Name).Op("=").Make(jen.Index().Id(cleanDtoTypeName), jen.Lit(0), jen.Len(jen.Id("src").Dot(sourceFieldName))),
+				jen.For(jen.List(jen.Id("i"), jen.Id("item")).Op(":=").Range().Id("src").Dot(sourceFieldName)).Block(
+					jen.If(jen.Id("item").Op("!=").Nil()).Block(
+						jen.Var().Id("nested").Id(cleanDtoTypeName),
+						jen.If(
+							jen.Err().Op(":=").Id("nested").Dot(methodName).Call(jen.Id("item")),
+							jen.Err().Op("!=").Nil(),
+						).Block(
+							jen.Return(jen.Qual("fmt", "Errorf").Call(
+								jen.Lit(fmt.Sprintf("mapping nested field %s[%%d]: %%w", dtoField.Name)),
+								jen.Id("i"),
+								jen.Err(),
+							)),
+						),
+						jen.Id("d").Dot(dtoField.Name).Op("=").Append(jen.Id("d").Dot(dtoField.Name), jen.Id("nested")),
+					),
+				),
+			),
+		}
+	}
+
+	// Fallback (shouldn't reach here)
+	return []jen.Code{
+		jen.Comment(fmt.Sprintf("// %s: unsupported slice mapping", dtoField.Name)),
+	}
 }
 
 // buildConverterMapping creates statements for converter-based field mapping with pointer handling
@@ -257,9 +482,4 @@ func buildFieldMapping(
 	return []jen.Code{
 		jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName),
 	}
-}
-
-// buildDirectMapping creates a statement for direct field assignment (legacy)
-func buildDirectMapping(dtoField types.FieldInfo, sourceFieldName string) jen.Code {
-	return jen.Id("d").Dot(dtoField.Name).Op("=").Id("src").Dot(sourceFieldName)
 }
