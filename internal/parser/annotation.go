@@ -21,8 +21,8 @@ func ExtractAnnotation(doc *ast.CommentGroup) string {
 			text = strings.TrimSpace(text[2 : len(text)-2])
 		}
 
-		if strings.HasPrefix(text, "automapper:from=") {
-			return strings.TrimSpace(strings.TrimPrefix(text, "automapper:from="))
+		if after, ok := strings.CutPrefix(text, "automapper:from="); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return ""
