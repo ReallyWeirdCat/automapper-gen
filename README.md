@@ -1,8 +1,8 @@
 # Automapper Generator
-[![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue.svg)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.25.5-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A CLI utility that generates reflection-free Go code for mapping structs with type conversion support.
+An easy-to-use CLI utility that generates reflection-free Go 1.18+ code for mapping structs with type conversion support.
 
 > **⚠️ Development Status**: This project is in early development. There are yet no integrated tests, and some things may be subject to change. Any feedback is greatly appreciated!
 
@@ -69,7 +69,7 @@ Create an `automapper.json` file in your DTO package directory:
     {
       "name": "TimeToString",
       "function": "TimeToJSString"
-    },
+    }
   ],
   "externalPackages": [
     {
@@ -322,6 +322,14 @@ type UserDTO struct {
 
 ### Converters
 
+#### Built-in Converter
+
+The following converter is automatically generated and available for use:
+
+- `TimeToJSString`: Converts `time.Time` to RFC3339 string format
+
+#### Custom Converters
+
 Create and register custom converters in your code:
 
 ```go
@@ -362,7 +370,7 @@ func StrInterestsToEnums(interests []string) ([]types.Interest, error) {
 
 Update your `automapper.json` to include your converters:
 
-```jsonc
+```json
 {
   "package": "dtos",
   "output": "automappers.go",
@@ -372,8 +380,8 @@ Update your `automapper.json` to include your converters:
       "function": "TimeToJSString"
     },
     {
-      "name": "RoleEnum",  // the name used in tags
-      "function": "StrRoleToEnum"  // the function we created for conversion
+      "name": "RoleEnum",
+      "function": "StrRoleToEnum"
     },
     {
       "name": "InterestEnums",
@@ -395,18 +403,12 @@ Use in your DTOs:
 
 ```go
 type UserDTO struct {
-    Role      Role      `automapper:"converter=StrRoleToEnum"`
-    Interests []Interest `automapper:"converter=StrInterestsToEnums"`
+    Role      Role       `automapper:"converter=RoleEnum"`
+    Interests []Interest `automapper:"converter=InterestEnums"`
 }
 ```
 
 **Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
-
-#### Built-in Converters
-
-The following converters are automatically generated and available:
-
-- `TimeToJSString`: Converts `time.Time` to RFC3339 string format
 
 ### Nested Structs
 
@@ -454,9 +456,9 @@ Field DTO `automapper:"dto=TargetDTO,field=SourceFieldName"`
 package db
 
 type User struct {
-    id       int64
-    username string
-    email    string
+    ID       int64
+    Username string
+    Email    string
 }
 ```
 
@@ -466,7 +468,7 @@ package dtos
 
 //automapper:from=db.User
 type UserDTO struct {
-    Id       int64
+    ID       int64
     Username string
     Email    string
 }
@@ -474,7 +476,7 @@ type UserDTO struct {
 
 **Usage**:
 ```go
-user := &db.User{id: 1, username: "john", email: "john@example.com"}
+user := &db.User{ID: 1, Username: "john", Email: "john@example.com"}
 dto := &dtos.UserDTO{}
 dto.MapFromUser(user)
 ```
@@ -488,10 +490,10 @@ package db
 import "time"
 
 type Product struct {
-    id         int64
-    name       string
-    price      float64
-    created_at time.Time
+    ID        int64
+    Name      string
+    Price     float64
+    CreatedAt time.Time
 }
 ```
 
@@ -501,7 +503,7 @@ package dtos
 
 //automapper:from=db.Product
 type ProductDTO struct {
-    Id        int64
+    ID        int64
     Name      string
     Price     float64
     CreatedAt string `automapper:"converter=TimeToJSString"`
