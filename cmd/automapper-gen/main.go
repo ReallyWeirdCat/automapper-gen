@@ -70,7 +70,6 @@ func run(pkgPath string, startTime time.Time) error {
 
 	logger.Progress(stepStart, "Config loaded")
 	logger.Verbose("Output file: %s", cfg.Output)
-	logger.Verbose("Field transform: %s", cfg.FieldNameTransform)
 	logger.Verbose("External packages: %d", len(cfg.ExternalPackages))
 
 	if len(cfg.ExternalPackages) > 0 {

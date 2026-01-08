@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
-	"git.weirdcat.su/weirdcat/automapper-gen/internal/parser"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/types"
 	"github.com/dave/jennifer/jen"
 )
@@ -97,14 +96,6 @@ func resolveSourceFieldName(
 ) string {
 	if dtoField.FieldTag != "" {
 		return dtoField.FieldTag
-	}
-
-	if cfg.FieldNameTransform == "snake_to_camel" {
-		for srcFieldName := range source.Fields {
-			if parser.SnakeToCamel(srcFieldName) == dtoField.Name {
-				return srcFieldName
-			}
-		}
 	}
 
 	return dtoField.Name

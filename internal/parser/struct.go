@@ -95,14 +95,3 @@ func parseAutomapperTag(tag string) (converter, field, nestedDTO string, ignore 
 
 	return
 }
-
-// SnakeToCamel converts snake_case to CamelCase
-func SnakeToCamel(s string) string {
-	parts := strings.Split(s, "_")
-	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + part[1:]
-		}
-	}
-	return strings.Join(parts, "")
-}

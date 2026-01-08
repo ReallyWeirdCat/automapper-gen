@@ -386,7 +386,6 @@ func main() {
 |-------|------|----------|-------------|
 | `package` | string | Yes | Target package name |
 | `output` | string | No | Output filename (default: "automappers.go") |
-| `fieldNameTransform` | string | No | Field name transformation ("snake_to_camel", default) |
 | `nilPointersForNull` | bool | No | Use nil pointers for null values |
 | `externalPackages` | array | No | External packages to parse |
 

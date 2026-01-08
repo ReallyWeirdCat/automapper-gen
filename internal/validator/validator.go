@@ -230,7 +230,7 @@ func (v *Validator) validateField(
 	field types.FieldInfo,
 	result *ValidationResult,
 ) {
-	sourceFieldName := v.resolveSourceFieldName(field, source)
+	sourceFieldName := v.resolveSourceFieldName(field)
 	sourceField, exists := source.Fields[sourceFieldName]
 
 	if !exists {
@@ -426,18 +426,10 @@ func (v *Validator) validateDirectMapping(
 
 // resolveSourceFieldName determines the source field name
 func (v *Validator) resolveSourceFieldName(
-	field types.FieldInfo, source types.SourceStruct,
+	field types.FieldInfo,
 ) string {
 	if field.FieldTag != "" {
 		return field.FieldTag
-	}
-
-	if v.cfg.FieldNameTransform == "snake_to_camel" {
-		for srcFieldName := range source.Fields {
-			if snakeToCamel(srcFieldName) == field.Name {
-				return srcFieldName
-			}
-		}
 	}
 
 	return field.Name
@@ -506,15 +498,4 @@ func extractBaseType(typeStr string) string {
 	typeStr = strings.TrimPrefix(typeStr, "*")
 	typeStr = strings.TrimPrefix(typeStr, "[]")
 	return typeStr
-}
-
-// snakeToCamel converts snake_case to CamelCase
-func snakeToCamel(s string) string {
-	parts := strings.Split(s, "_")
-	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + part[1:]
-		}
-	}
-	return strings.Join(parts, "")
 }

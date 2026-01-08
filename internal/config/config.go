@@ -7,10 +7,8 @@ import (
 
 // Config represents the automapper configuration
 type Config struct {
-	Package              string            `json:"package"`
 	Output               string            `json:"output"`
 	DefaultConverters    []ConverterDef    `json:"defaultConverters"`
-	FieldNameTransform   string            `json:"fieldNameTransform"`
 	NilPointersForNull   bool              `json:"nilPointersForNull"`
 	ExternalPackages     []ExternalPackage `json:"externalPackages"`
 }
@@ -44,9 +42,6 @@ func Load(path string) (*Config, error) {
 	// Set defaults
 	if cfg.Output == "" {
 		cfg.Output = "automappers.go"
-	}
-	if cfg.FieldNameTransform == "" {
-		cfg.FieldNameTransform = "snake_to_camel"
 	}
 
 	return &cfg, nil
