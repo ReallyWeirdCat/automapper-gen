@@ -290,8 +290,6 @@ func main() {
 }
 ```
 
-**Note**: The `TimeToJSString` converter function is built-in.
-
 ## Configuration
 
 ### Configuration File (`automapper.json`)
