@@ -48,7 +48,7 @@ func buildMethodBody(
 
 	// Build converter map
 	converterMap := make(map[string]config.ConverterDef)
-	for _, conv := range cfg.DefaultConverters {
+	for _, conv := range cfg.Converters {
 		converterMap[conv.Name] = conv
 	}
 

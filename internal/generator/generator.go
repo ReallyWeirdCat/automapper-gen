@@ -37,10 +37,6 @@ func Generate(
 		}
 	}
 
-	// Generate converter infrastructure
-	logger.Verbose("Generating converter infrastructure...")
-	logger.Verbose("Generated converter infrastructure with %d default converters", len(cfg.DefaultConverters))
-
 	// Generate MapFrom methods
 	logger.Verbose("Generating MapFrom methods for %d DTOs...", len(dtos))
 	totalMethods := 0

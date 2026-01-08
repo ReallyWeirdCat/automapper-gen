@@ -78,9 +78,9 @@ func run(pkgPath string, startTime time.Time) error {
 		}
 	}
 
-	if len(cfg.DefaultConverters) > 0 {
-		logger.Verbose("Default converters: %d", len(cfg.DefaultConverters))
-		for _, conv := range cfg.DefaultConverters {
+	if len(cfg.Converters) > 0 {
+		logger.Verbose("Converters: %d", len(cfg.Converters))
+		for _, conv := range cfg.Converters {
 			safeStr := ""
 			if conv.Trusted {
 				safeStr = " [safe]"

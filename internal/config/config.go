@@ -8,7 +8,7 @@ import (
 // Config represents the automapper configuration
 type Config struct {
 	Output               string            `json:"output"`
-	DefaultConverters    []ConverterDef    `json:"defaultConverters"`
+	Converters    []ConverterDef    `json:"converters"`
 	NilPointersForNull   bool              `json:"nilPointersForNull"`
 	ExternalPackages     []ExternalPackage `json:"externalPackages"`
 }

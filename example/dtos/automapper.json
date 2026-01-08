@@ -1,6 +1,6 @@
 {
     "output": "automappers.go",
-    "defaultConverters": [
+    "converters": [
         {
             "name": "TimeToString",
             "function": "TimeToJSString",

@@ -149,7 +149,7 @@ func (v *Validator) validateConverterFunctions(result *ValidationResult) {
 	logger.Verbose("Validating converter functions...")
 
 	converterMap := make(map[string]config.ConverterDef)
-	for _, conv := range v.cfg.DefaultConverters {
+	for _, conv := range v.cfg.Converters {
 		converterMap[conv.Name] = conv
 
 		// Check if function exists
@@ -191,7 +191,7 @@ func (v *Validator) validateConverterFunctions(result *ValidationResult) {
 		}
 	}
 
-	logger.Verbose("Converter functions validated: %d", len(v.cfg.DefaultConverters))
+	logger.Verbose("Converter functions validated: %d", len(v.cfg.Converters))
 }
 
 // validateDTOMapping validates a single DTO to source mapping
@@ -342,7 +342,7 @@ func (v *Validator) validateConverter(
 
 	// Check if converter exists in config
 	found := false
-	for _, conv := range v.cfg.DefaultConverters {
+	for _, conv := range v.cfg.Converters {
 		if conv.Name == converterName {
 			found = true
 			logger.Debug("    OK: Using registered converter: %s", converterName)

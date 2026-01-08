@@ -253,7 +253,7 @@ Create an `automapper.json`:
 ```json
 {
   "output": "automappers.go",
-  "defaultConverters": [
+  "converters": [
     {
       "name": "TimeToString",
       "function": "TimeToJSString"
@@ -549,20 +549,14 @@ type UserDTO struct {
 
 ### Converters
 
-#### Built-in Converter
-
-The following converter is automatically generated and available for use:
-
-- `TimeToJSString`: Converts `time.Time` to the API-friendly string representation
-
-#### Custom Converters
-
 We often have to deal with mismatching data types or want to adjust the format of 
 the data. We can automate conversion by implementing custom converters in the package
 to do the work for us.
 
+#### Regular converters
+
 In the same package where we store the destination structs, create a new .go file.
-We suggest the name `converters.go`:
+We suggest the name `converters.go`. Write one or several conversion functions:
 
 ```go
 package dtos
@@ -583,25 +577,9 @@ func StrRoleToEnum(role string) (types.Role, error) {
         return types.RoleGuest, fmt.Errorf("unknown role: %s", role)
     }
 }
-
-// More convertion functions if we need
-func StrInterestsToEnums(interests []string) ([]types.Interest, error) {
-    result := make([]types.Interest, len(interests))
-    for i, interest := range interests {
-        switch interest {
-        case "coding":
-            result[i] = types.InterestCoding
-        case "music":
-            result[i] = types.InterestMusic
-        default:
-            return nil, fmt.Errorf("unknown interest: %s", interest)
-        }
-    }
-    return result, nil
-}
 ```
 
-Converters must follow these function signatures, accepting value A and returning values B, error. 
+**Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
 
 Update your `automapper.json` to include your converters:
 
@@ -609,7 +587,7 @@ Update your `automapper.json` to include your converters:
 {
   "package": "dtos",
   "output": "automappers.go",
-  "defaultConverters": [
+  "converters": [
     {
       "name": "TimeToString",
       "function": "TimeToJSString"
@@ -649,7 +627,44 @@ type UserDTO struct {
 }
 ```
 
-**Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
+#### Trusted converters
+
+Regular converters through errors when things go wrong, but there can also be converters that are completely safe:
+
+```go
+// TimeToJSString converts time.Time to JavaScript ISO 8601 string
+func TimeToJSString(t time.Time) string {
+	return t.Format(time.RFC3339)
+}
+
+// Converts string to lowercase
+func ToLower(s string) string {
+	return strings.ToLower(s)
+}
+```
+
+As we can see in this example, both functions only return one value and no errors can happen.
+
+We can use these converters with signature `func(T) (U)`, provided that we mark them as "trusted" in `automapper.json`:
+
+```json
+{
+    "converters": [
+        {
+            "name": "TimeToString",
+            "function": "TimeToJSString",
+            "trusted": true
+        },
+        {
+            "name": "ToLower",
+            "function": "ToLower",
+            "trusted": true
+        }
+    ]
+}
+```
+
+With this the converter functions will be executed inside mappers without error handling.
 
 ### Nested Structs
 
