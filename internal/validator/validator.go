@@ -10,9 +10,10 @@ import (
 )
 
 type Severity string
+
 const (
-    SeverityError   = "error"
-    SeverityWarning = "warning"
+	SeverityError   = "error"
+	SeverityWarning = "warning"
 )
 
 // ValidationError represents a validation error

@@ -73,18 +73,18 @@ func detectColorSupport(writer io.Writer) bool {
 	if _, noColor := os.LookupEnv("NO_COLOR"); noColor {
 		return false
 	}
-	
+
 	// Check if output is a terminal
 	file, ok := writer.(*os.File)
 	if !ok {
 		return false
 	}
-	
+
 	stat, err := file.Stat()
 	if err != nil {
 		return false
 	}
-	
+
 	// Check if it's a character device (terminal)
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
@@ -172,12 +172,12 @@ func Debug(format string, args ...any) {
 			funcName = parts[len(parts)-1]
 			caller = fmt.Sprintf("%s:%d %s", file, line, funcName)
 		}
-		
+
 		prefix := "  [DEBUG] "
 		if defaultLogger.colors {
 			prefix = defaultLogger.colorize("  [DEBUG] ", ColorMagenta)
 		}
-		
+
 		if caller != "" {
 			callerInfo := ""
 			if defaultLogger.colors {

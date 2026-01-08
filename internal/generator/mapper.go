@@ -39,10 +39,7 @@ func GenerateMapFromMethod(
 
 // buildMethodBody constructs the method body statements
 func buildMethodBody(
-	dto types.DTOMapping,
-	source types.SourceStruct,
-	cfg *config.Config,
-	importMap map[string]string,
+	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config, importMap map[string]string,
 ) []jen.Code {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
