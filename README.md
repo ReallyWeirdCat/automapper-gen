@@ -9,11 +9,12 @@ An easy-to-use CLI utility that generates reflection-free Go 1.18+ code for mapp
 ## Features
 
 - 🚀 **Zero Reflection**: Generates type-safe code at compile time
-- 🔄 **Type Conversion**: Built-in converter system with custom converters
 - 📦 **Remote Packages**: Map from structs in any Go module (local or remote)
 - 🌐 **Module Cache Support**: Automatically loads types from Go's module cache
+- 🔄 **Type Conversion**: Convert any field types or formats via custom functions
 - 🏷️ **Flexible Mapping**: Tag-based field mapping and transformations
-- 🎯 **Type Safety**: Compile-time type checking with generics
+- 🪺 **Nesting**: Nested models can be automatically handled
+- 🔍 **Validation**: Prevents generation of broken code, predicts problems, suggests solutions
 - ⚡ **Performance**: Direct field assignments, no runtime overhead
 
 [![Marilyn Manson - No Reflection](https://img.youtube.com/vi/DOj3wDlr_BM/0.jpg)](https://www.youtube.com/watch?v=DOj3wDlr_BM)
@@ -31,7 +32,6 @@ An easy-to-use CLI utility that generates reflection-free Go 1.18+ code for mapp
   - [Field Tags](#field-tags)
   - [Converters](#converters)
   - [Nested Structs](#nested-structs)
-- [Examples](#examples)
 
 ## How It Works
 
@@ -385,6 +385,7 @@ func main() {
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `output` | string | No | Output filename (default: "automappers.go") |
+| `converters` | array | No | List converters with name and function |
 | `nilPointersForNull` | bool | No | Use nil pointers for null values |
 | `externalPackages` | array | No | External packages to parse |
 
@@ -449,7 +450,6 @@ type User struct {
 ```json
 // dto/automapper.json
 {
-  "package": "dto",
   "output": "automappers.go",
   "externalPackages": [
     {
@@ -553,8 +553,6 @@ We often have to deal with mismatching data types or want to adjust the format o
 the data. We can automate conversion by implementing custom converters in the package
 to do the work for us.
 
-#### Regular converters
-
 In the same package where we store the destination structs, create a new .go file.
 We suggest the name `converters.go`. Write one or several conversion functions:
 
@@ -566,7 +564,7 @@ import (
     "git.weirdcat.su/weirdcat/automapper-gen/example/types"
 )
 
-// Define your converter function
+// Regular converter
 func StrRoleToEnum(role string) (types.Role, error) {
     switch role {
     case "admin":
@@ -577,28 +575,28 @@ func StrRoleToEnum(role string) (types.Role, error) {
         return types.RoleGuest, fmt.Errorf("unknown role: %s", role)
     }
 }
+
+// Safe converter
+func ToLower(s string) string {
+	return strings.ToLower(s)
+}
 ```
 
-**Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
+**Note**: Converter functions must follow the signature `func(T) (U, error)` or `func(T) (U)` and be in the same package as your DTOs.
 
 Update your `automapper.json` to include your converters:
 
 ```json
 {
-  "package": "dtos",
   "output": "automappers.go",
   "converters": [
-    {
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    },
     {
       "name": "RoleEnum",
       "function": "StrRoleToEnum"
     },
     {
-      "name": "InterestEnums",
-      "function": "StrInterestsToEnums"
+      "name": "ToLower",
+      "function": "Lowercase"
     }
   ],
   "externalPackages": [
@@ -616,55 +614,14 @@ strategy for a given field.
 The `function` parameter references the name of the function that we created. The function will be tied to the previously
 defined tag `name`.
 
-The generated `automappers.go` will automatically include an `init()` function that registers these converters based on their function signatures.
-
 Use in your DTOs:
 
 ```go
 type UserDTO struct {
     Role      Role       `automapper:"converter=RoleEnum"`
-    Interests []Interest `automapper:"converter=InterestEnums"`
+    Bio       string     `automapper:"converter=LowerCase"`
 }
 ```
-
-#### Trusted converters
-
-Regular converters through errors when things go wrong, but there can also be converters that are completely safe:
-
-```go
-// TimeToJSString converts time.Time to JavaScript ISO 8601 string
-func TimeToJSString(t time.Time) string {
-	return t.Format(time.RFC3339)
-}
-
-// Converts string to lowercase
-func ToLower(s string) string {
-	return strings.ToLower(s)
-}
-```
-
-As we can see in this example, both functions only return one value and no errors can happen.
-
-We can use these converters with signature `func(T) (U)`, provided that we mark them as "trusted" in `automapper.json`:
-
-```json
-{
-    "converters": [
-        {
-            "name": "TimeToString",
-            "function": "TimeToJSString",
-            "trusted": true
-        },
-        {
-            "name": "ToLower",
-            "function": "ToLower",
-            "trusted": true
-        }
-    ]
-}
-```
-
-With this the converter functions will be executed inside mappers without error handling.
 
 ### Nested Structs
 
@@ -705,69 +662,6 @@ Field DTO `automapper:"dto=TargetDTO"`
 Field DTO `automapper:"dto=TargetDTO,field=SourceFieldName"`
 
 // Cannot combine dto with converter (dto takes precedence)
-```
-
-## Examples
-
-### Example 1: Basic User Mapping
-
-**Source** (`db/user.go`):
-```go
-package db
-
-type User struct {
-    ID       int64
-    Username string
-    Email    string
-}
-```
-
-**DTO** (`dtos/user.go`):
-```go
-package dtos
-
-//automapper:from=db.User
-type UserDTO struct {
-    ID       int64
-    Username string
-    Email    string
-}
-```
-
-**Usage**:
-```go
-user := &db.User{ID: 1, Username: "john", Email: "john@example.com"}
-dto := &dtos.UserDTO{}
-dto.MapFromUser(user)
-```
-
-### Example 2: With Type Conversion
-
-**Source** (`db/product.go`):
-```go
-package db
-
-import "time"
-
-type Product struct {
-    ID        int64
-    Name      string
-    Price     float64
-    CreatedAt time.Time
-}
-```
-
-**DTO** (`dtos/product.go`):
-```go
-package dtos
-
-//automapper:from=db.Product
-type ProductDTO struct {
-    ID        int64
-    Name      string
-    Price     float64
-    CreatedAt string `automapper:"converter=TimeToJSString"`
-}
 ```
 
 ## Acknowledgments
