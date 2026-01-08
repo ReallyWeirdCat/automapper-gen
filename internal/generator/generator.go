@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
+	"git.weirdcat.su/weirdcat/automapper-gen/internal/logger"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/types"
 	"github.com/dave/jennifer/jen"
 )
@@ -16,6 +17,8 @@ func Generate(
 	cfg *config.Config,
 	pkgName string,
 ) (*jen.File, error) {
+	logger.Verbose("Starting code generation for package: %s", pkgName)
+
 	f := jen.NewFile(pkgName)
 
 	// Add header comment
@@ -25,14 +28,28 @@ func Generate(
 	)
 
 	// Build import mapping (alias -> importPath) for external packages
+	logger.Verbose("Building import map...")
 	importMap := buildImportMap(sources)
+	if len(importMap) > 0 {
+		logger.Verbose("Import map entries: %d", len(importMap))
+		for alias, path := range importMap {
+			logger.Debug("  %s -> %s", alias, path)
+		}
+	}
 
 	// Generate converter infrastructure
+	logger.Verbose("Generating converter infrastructure...")
 	GenerateInfrastructure(f, cfg, importMap)
+	logger.Verbose("Generated converter infrastructure with %d default converters", len(cfg.DefaultConverters))
 
 	// Generate MapFrom methods
-	for _, dto := range dtos {
-		for _, sourceName := range dto.Sources {
+	logger.Verbose("Generating MapFrom methods for %d DTOs...", len(dtos))
+	totalMethods := 0
+
+	for i, dto := range dtos {
+		logger.Verbose("[%d/%d] Generating methods for DTO: %s", i+1, len(dtos), dto.Name)
+
+		for j, sourceName := range dto.Sources {
 			source, ok := sources[sourceName]
 			if !ok {
 				return nil, fmt.Errorf("source struct %s not found for DTO %s", sourceName, dto.Name)
@@ -43,9 +60,16 @@ func Generate(
 				methodName = "MapFrom" + ExtractTypeNameWithoutPackage(sourceName)
 			}
 
+			logger.Debug("  [%d/%d] Generating %s.%s (source: %s)",
+				j+1, len(dto.Sources), dto.Name, methodName, sourceName)
+
 			GenerateMapFromMethod(f, dto, source, sourceName, methodName, cfg, importMap)
+			totalMethods++
 		}
 	}
+
+	logger.Verbose("Generated %d MapFrom methods", totalMethods)
+	logger.Success("Code generation completed successfully")
 
 	return f, nil
 }
