@@ -72,8 +72,6 @@ func run(pkgPath string, startTime time.Time) error {
 	logger.Verbose("Output file: %s", cfg.Output)
 	logger.Verbose("Field transform: %s", cfg.FieldNameTransform)
 	logger.Verbose("External packages: %d", len(cfg.ExternalPackages))
-	logger.Verbose("Enable safe mappers: %v", cfg.EnableSafeMappers)
-	logger.Verbose("Enable unsafe wrappers: %v", cfg.EnableUnsafeWrappers)
 
 	if len(cfg.ExternalPackages) > 0 {
 		for _, pkg := range cfg.ExternalPackages {

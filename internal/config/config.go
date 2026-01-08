@@ -13,8 +13,6 @@ type Config struct {
 	FieldNameTransform   string            `json:"fieldNameTransform"`
 	NilPointersForNull   bool              `json:"nilPointersForNull"`
 	ExternalPackages     []ExternalPackage `json:"externalPackages"`
-	EnableSafeMappers    bool              `json:"-"` // This feature idea was naive and stupid
-	EnableUnsafeWrappers bool              `json:"-"` // Even stupider
 }
 
 // ExternalPackage defines an external package to include in parsing

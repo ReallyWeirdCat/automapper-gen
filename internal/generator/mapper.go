@@ -22,145 +22,18 @@ func GenerateMapFromMethod(
 	// Parse parameter type
 	paramType := ParseTypeRefForJen(sourceName, importMap)
 
-	// Determine if this mapper can be safe (no errors possible)
-	isSafe := isMapperSafe(dto, cfg)
+	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
 
-	// Generate safe mapper if enabled and mapper is safe
-	if cfg.EnableSafeMappers && isSafe {
-		safeMethodName := "Safe" + methodName
+	methodBody := buildMethodBody(dto, source, cfg)
 
-		f.Comment(fmt.Sprintf("%s maps from %s to %s (no errors possible)", safeMethodName, sourceName, dto.Name))
+	// Generate method
+	f.Func().Params(
+		jen.Id("d").Op("*").Id(dto.Name),
+	).Id(methodName).Params(
+		jen.Id("src").Op("*").Add(paramType),
+	).Error().Block(methodBody...)
 
-		// Build safe method body (no error returns)
-		methodBody := buildSafeMethodBody(dto, source, cfg)
-
-		// Generate safe method (no error return)
-		f.Func().Params(
-			jen.Id("d").Op("*").Id(dto.Name),
-		).Id(safeMethodName).Params(
-			jen.Id("src").Op("*").Add(paramType),
-		).Block(methodBody...)
-
-		f.Line()
-
-		// Generate wrapper if enabled
-		if cfg.EnableUnsafeWrappers {
-			f.Comment(fmt.Sprintf("%s wraps %s for backward compatibility", methodName, safeMethodName))
-
-			f.Func().Params(
-				jen.Id("d").Op("*").Id(dto.Name),
-			).Id(methodName).Params(
-				jen.Id("src").Op("*").Add(paramType),
-			).Error().Block(
-				jen.If(jen.Id("src").Op("==").Nil()).Block(
-					jen.Return(jen.Qual("errors", "New").Call(jen.Lit("source is nil"))),
-				),
-				jen.Id("d").Dot(safeMethodName).Call(jen.Id("src")),
-				jen.Return(jen.Nil()),
-			)
-
-			f.Line()
-		}
-	} else {
-		// Generate regular error-returning method
-		f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
-
-		// Build regular method body
-		methodBody := buildMethodBody(dto, source, cfg)
-
-		// Generate method
-		f.Func().Params(
-			jen.Id("d").Op("*").Id(dto.Name),
-		).Id(methodName).Params(
-			jen.Id("src").Op("*").Add(paramType),
-		).Error().Block(methodBody...)
-
-		f.Line()
-	}
-}
-
-// isMapperSafe determines if a mapper can never produce errors
-func isMapperSafe(dto types.DTOMapping, cfg *config.Config) bool {
-	// Build converter map for quick lookup
-	converterMap := make(map[string]config.ConverterDef)
-	for _, conv := range cfg.DefaultConverters {
-		converterMap[conv.Name] = conv
-	}
-
-	for _, field := range dto.Fields {
-		if field.Ignore {
-			continue
-		}
-
-		// Nested DTOs can fail
-		if field.NestedDTO != "" {
-			return false
-		}
-
-		// If converter is used, check if it's safe
-		if field.ConverterTag != "" {
-			conv, exists := converterMap[field.ConverterTag]
-			if !exists {
-				// Unknown converter - assume unsafe
-				return false
-			}
-			if !conv.Trusted {
-				// Converter returns error
-				return false
-			}
-		}
-
-		// Pointer conversions are always safe
-		// Direct assignments are always safe
-	}
-
-	return true
-}
-
-// buildSafeMethodBody constructs the safe method body (no error handling)
-func buildSafeMethodBody(
-	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config,
-) []jen.Code {
-	statements := []jen.Code{
-		jen.If(jen.Id("src").Op("==").Nil()).Block(
-			jen.Return(),
-		),
-		jen.Line(),
-	}
-
-	// Build converter map
-	converterMap := make(map[string]config.ConverterDef)
-	for _, conv := range cfg.DefaultConverters {
-		converterMap[conv.Name] = conv
-	}
-
-	// Generate field mappings
-	for _, dtoField := range dto.Fields {
-		if dtoField.Ignore {
-			continue
-		}
-
-		sourceFieldName := resolveSourceFieldName(dtoField, source, cfg)
-		sourceField, exists := source.Fields[sourceFieldName]
-
-		if !exists {
-			statements = append(statements,
-				jen.Comment(fmt.Sprintf("%s: not found in source, will be zero value", dtoField.Name)),
-			)
-			continue
-		}
-
-		// Only converters and direct mappings are allowed in safe mappers
-		if dtoField.ConverterTag != "" {
-			conv := converterMap[dtoField.ConverterTag]
-			statements = append(statements, buildSafeConverterMapping(dtoField, sourceField, sourceFieldName, conv)...)
-		} else {
-			statements = append(statements, buildFieldMapping(dtoField, sourceField, sourceFieldName)...)
-		}
-	}
-
-	statements = append(statements, jen.Line())
-	return statements
+	f.Line()
 }
 
 // buildMethodBody constructs the regular method body with error handling
