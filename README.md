@@ -185,12 +185,7 @@ Create an `automapper.json`:
 ```json
 {
   "output": "automappers.go",
-  "converters": [
-    {
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    }
-  ],
+  "converters": [],
   "externalPackages": [
     {
       "alias": "db",
@@ -219,8 +214,6 @@ type UserDB struct {
     Username  string
     Email     string
     Password  string
-    CreatedAt time.Time
-    UpdatedAt time.Time
 }
 ```
 This is what the generator is going to map from.
@@ -234,17 +227,12 @@ type UserDTO struct {
     ID        int64
     Username  string
     Email     string
-    CreatedAt string `automapper:"converter=TimeToJSString"`
-    UpdatedAt string `automapper:"converter=TimeToJSString"`
 }
 ```
 This is the destination struct that the generator will attempt to map the previous struct to.
 
-To spice things up, we decided that we want to convert the timestamps into another representation
-using one of the built-in type converters.
-
-Notice how the database model requires none of our tags or annotations. This is a design choice
-since we wanted to have compatibility with database model generators that would otherwise overwrite
+The database model requires none of our tags or annotations. This design choice was made
+for the sake of compatibility with database model generators that would otherwise overwrite
 the extra information. This makes the tool work especially well with the SQL-compiler [sqlc](https://github.com/sqlc-dev/sqlc).
 
 ### 3. Generate Mappers
@@ -255,17 +243,13 @@ Simply run the command in the second directory:
 automapper-gen .
 ```
 
-Great, the code has been generated and written into `automappers.go` in the same directory.
-
-Apart from the automated boilerplate, the file declares methods for the destination structs
-that allow mapping from the specified source structs:
+Great, the code has been generated and written into the `automappers.go` file in the same directory. The file now declares a method for our `UserDTO` destination struct, which will map data from the source struct `db.UserDB`:
 
 ```go
-dto := &dtos.UserDTO{}
-dto.MapFromUserDB(user)
+(d* UserDTO) MapFromUserDB(src* db.UserDB)
 ```
 
-the methods always follow the pattern `.MapFrom{Source}(src {Source})`.
+the mapper methods always follow the pattern `obj.MapFromT(src T)`.
 
 Automapper Generator utilizes its own validation system to find errors and warn the user
 about potential problems. However, if it fails and still generates faulty code, we are
@@ -293,8 +277,6 @@ func main() {
         Username:  "john_doe",
         Email:     "john@example.com",
         Password:  "hashed_password",
-        CreatedAt: time.Now(),
-        UpdatedAt: time.Now(),
     }
 
     // Map to DTO
@@ -304,7 +286,7 @@ func main() {
     }
 
     fmt.Printf("User: %+v\n", dto)
-    // Output: User: {ID:1 Username:john_doe Email:john@example.com CreatedAt:2024-01-05T10:30:00Z UpdatedAt:2024-01-05T10:30:00Z}
+    // Output: User: {ID:1 Username:john_doe Email:john@example.com}
 }
 ```
 
