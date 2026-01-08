@@ -81,11 +81,7 @@ func run(pkgPath string, startTime time.Time) error {
 	if len(cfg.Converters) > 0 {
 		logger.Verbose("Converters: %d", len(cfg.Converters))
 		for _, conv := range cfg.Converters {
-			safeStr := ""
-			if conv.Trusted {
-				safeStr = " [safe]"
-			}
-			logger.Debug("  - %s -> %s%s", conv.Name, conv.Function, safeStr)
+			logger.Debug("  - %s -> %s", conv.Name, conv.Function)
 		}
 	}
 
@@ -167,7 +163,7 @@ func run(pkgPath string, startTime time.Time) error {
 	currentStep++
 	stepStart = time.Now()
 
-	file, err := generator.Generate(dtos, sources, cfg, pkgName)
+	file, err := generator.Generate(dtos, sources, cfg, pkgName, functions)
 	if err != nil {
 		return fmt.Errorf("generating code: %w", err)
 	}

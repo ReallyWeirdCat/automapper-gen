@@ -163,31 +163,22 @@ func (v *Validator) validateConverterFunctions(result *ValidationResult) {
 			continue
 		}
 
-		// Validate function signature
-		if conv.Trusted {
-			// Safe converter: func(T) U
-			if !parser.IsSafeConverterSignature(fn) {
-				result.Errors = append(result.Errors, ValidationError{
-					Message: fmt.Sprintf("Converter function '%s' marked as safe but has wrong signature (expected: func(T) U, got: %d params, %d returns)",
-						conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
-					Severity:   SeverityError,
-					Suggestion: "Change signature to func(T) U or set 'safe': false in automapper.json",
-				})
-			} else {
-				logger.Debug("  Safe converter '%s' (%s) validated", conv.Name, conv.Function)
-			}
+		// Validate function signature and automatically detect type
+		isSafe := parser.IsSafeConverterSignature(fn)
+		isErrorReturning := parser.IsErrorReturningConverterSignature(fn)
+
+		if isSafe {
+			logger.Debug("  Safe converter '%s' (%s) - func(T) U", conv.Name, conv.Function)
+		} else if isErrorReturning {
+			logger.Debug("  Regular converter '%s' (%s) - func(T) (U, error)", conv.Name, conv.Function)
 		} else {
-			// Error-returning converter: func(T) (U, error)
-			if !parser.IsErrorReturningConverterSignature(fn) {
-				result.Errors = append(result.Errors, ValidationError{
-					Message: fmt.Sprintf("Converter function '%s' has wrong signature (expected: func(T) (U, error), got: %d params, %d returns)",
-						conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
-					Severity:   SeverityError,
-					Suggestion: "Change signature to func(T) (U, error) or set 'safe': true if it doesn't return error",
-				})
-			} else {
-				logger.Debug("  Error-returning converter '%s' (%s) validated", conv.Name, conv.Function)
-			}
+			// Invalid signature
+			result.Errors = append(result.Errors, ValidationError{
+				Message: fmt.Sprintf("Converter function '%s' has invalid signature, got: %d params, %d returns)",
+					conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
+				Severity:   SeverityError,
+				Suggestion: "Change signature to either func(T) U (for safe converters) or func(T) (U, error)",
+			})
 		}
 	}
 
@@ -355,9 +346,9 @@ func (v *Validator) validateConverter(
 			DTO:        dto.Name,
 			Source:     sourceName,
 			Field:      field.Name,
-			Message:    fmt.Sprintf("Converter '%s' not found in defaultConverters", converterName),
+			Message:    fmt.Sprintf("Converter '%s' not found in converters", converterName),
 			Severity:   SeverityError,
-			Suggestion: "Add converter to automapper.json defaultConverters list",
+			Suggestion: "Add converter to automapper.json converters list",
 		})
 		return
 	}
@@ -425,9 +416,7 @@ func (v *Validator) validateDirectMapping(
 }
 
 // resolveSourceFieldName determines the source field name
-func (v *Validator) resolveSourceFieldName(
-	field types.FieldInfo,
-) string {
+func (v *Validator) resolveSourceFieldName(field types.FieldInfo) string {
 	if field.FieldTag != "" {
 		return field.FieldTag
 	}

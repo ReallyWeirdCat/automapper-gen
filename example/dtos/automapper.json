@@ -3,8 +3,7 @@
     "converters": [
         {
             "name": "TimeToString",
-            "function": "TimeToJSString",
-            "trusted": true
+            "function": "TimeToJSString"
         },
         {
             "name": "RoleEnum",
@@ -16,8 +15,7 @@
         },
         {
             "name": "ToLower",
-            "function": "ToLower",
-            "trusted": true
+            "function": "ToLower"
         }
     ],
     "externalPackages": [

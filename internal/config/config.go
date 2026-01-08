@@ -7,10 +7,10 @@ import (
 
 // Config represents the automapper configuration
 type Config struct {
-	Output               string            `json:"output"`
-	Converters    []ConverterDef    `json:"converters"`
-	NilPointersForNull   bool              `json:"nilPointersForNull"`
-	ExternalPackages     []ExternalPackage `json:"externalPackages"`
+	Output             string            `json:"output"`
+	Converters         []ConverterDef    `json:"converters"`
+	NilPointersForNull bool              `json:"nilPointersForNull"`
+	ExternalPackages   []ExternalPackage `json:"externalPackages"`
 }
 
 // ExternalPackage defines an external package to include in parsing
@@ -24,7 +24,6 @@ type ExternalPackage struct {
 type ConverterDef struct {
 	Name     string `json:"name"`
 	Function string `json:"function"`
-	Trusted  bool   `json:"trusted"`
 }
 
 // Load reads and parses the configuration file

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
+	"git.weirdcat.su/weirdcat/automapper-gen/internal/parser"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/types"
 	"github.com/dave/jennifer/jen"
 )
@@ -17,13 +18,14 @@ func GenerateMapFromMethod(
 	sourceName, methodName string,
 	cfg *config.Config,
 	importMap map[string]string,
+	functions map[string]types.FunctionInfo,
 ) {
 	// Parse parameter type
 	paramType := ParseTypeRefForJen(sourceName, importMap)
 
 	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
 
-	methodBody := buildMethodBody(dto, source, cfg)
+	methodBody := buildMethodBody(dto, source, cfg, functions)
 
 	// Generate method
 	f.Func().Params(
@@ -37,7 +39,10 @@ func GenerateMapFromMethod(
 
 // buildMethodBody constructs the regular method body with error handling
 func buildMethodBody(
-	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config,
+	dto types.DTOMapping,
+	source types.SourceStruct,
+	cfg *config.Config,
+	functions map[string]types.FunctionInfo,
 ) []jen.Code {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
@@ -58,7 +63,7 @@ func buildMethodBody(
 			continue
 		}
 
-		sourceFieldName := resolveSourceFieldName(dtoField, source, cfg)
+		sourceFieldName := resolveSourceFieldName(dtoField)
 		sourceField, exists := source.Fields[sourceFieldName]
 
 		if !exists {
@@ -80,7 +85,12 @@ func buildMethodBody(
 				)
 				continue
 			}
-			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, conv)...)
+
+			// Check if converter is safe (1 return) or error-returning (2 returns)
+			fn, fnExists := functions[conv.Function]
+			isSafe := fnExists && parser.IsSafeConverterSignature(fn)
+
+			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, conv, isSafe)...)
 		} else {
 			statements = append(statements, buildFieldMapping(dtoField, sourceField, sourceFieldName)...)
 		}
@@ -92,7 +102,7 @@ func buildMethodBody(
 
 // resolveSourceFieldName determines the source field name for a DTO field
 func resolveSourceFieldName(
-	dtoField types.FieldInfo, source types.SourceStruct, cfg *config.Config,
+	dtoField types.FieldInfo,
 ) string {
 	if dtoField.FieldTag != "" {
 		return dtoField.FieldTag
@@ -160,8 +170,25 @@ func buildSafeConverterMapping(
 	}
 }
 
-// buildConverterMapping creates statements for error-returning converter
+// buildConverterMapping creates statements for converter - automatically detects safe vs error-returning
 func buildConverterMapping(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	conv config.ConverterDef,
+	isSafe bool,
+) []jen.Code {
+	// For safe converters, use the safe version
+	if isSafe {
+		return buildSafeConverterMapping(dtoField, sourceField, sourceFieldName, conv)
+	}
+
+	// Otherwise use error-returning version
+	return buildErrorReturningConverterMapping(dtoField, sourceField, sourceFieldName, conv)
+}
+
+// buildErrorReturningConverterMapping creates statements for error-returning converter
+func buildErrorReturningConverterMapping(
 	dtoField types.FieldInfo,
 	sourceField types.FieldTypeInfo,
 	sourceFieldName string,
@@ -169,11 +196,6 @@ func buildConverterMapping(
 ) []jen.Code {
 	srcIsPointer := sourceField.IsPointer
 	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
-
-	// For safe converters, use the safe version
-	if conv.Trusted {
-		return buildSafeConverterMapping(dtoField, sourceField, sourceFieldName, conv)
-	}
 
 	// Error-returning converters have signature: func(T) (U, error)
 	var statements []jen.Code
