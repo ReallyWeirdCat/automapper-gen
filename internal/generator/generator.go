@@ -16,8 +16,10 @@ func Generate(
 	sources map[string]types.SourceStruct,
 	cfg *config.Config,
 	pkgName string,
+	functions map[string]types.FunctionInfo,
 ) (*jen.File, error) {
 	logger.Verbose("Starting code generation for package: %s", pkgName)
+	logger.Debug("Available functions for converter detection: %d", len(functions))
 
 	f := jen.NewFile(pkgName)
 
@@ -36,11 +38,6 @@ func Generate(
 			logger.Debug("  %s -> %s", alias, path)
 		}
 	}
-
-	// Generate converter infrastructure
-	logger.Verbose("Generating converter infrastructure...")
-	GenerateInfrastructure(f, cfg, importMap)
-	logger.Verbose("Generated converter infrastructure with %d default converters", len(cfg.DefaultConverters))
 
 	// Generate MapFrom methods
 	logger.Verbose("Generating MapFrom methods for %d DTOs...", len(dtos))
@@ -63,7 +60,7 @@ func Generate(
 			logger.Debug("  [%d/%d] Generating %s.%s (source: %s)",
 				j+1, len(dto.Sources), dto.Name, methodName, sourceName)
 
-			GenerateMapFromMethod(f, dto, source, sourceName, methodName, cfg, importMap)
+			GenerateMapFromMethod(f, dto, source, sourceName, methodName, cfg, importMap, functions)
 			totalMethods++
 		}
 	}

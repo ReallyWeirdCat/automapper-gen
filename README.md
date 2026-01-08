@@ -9,11 +9,12 @@ An easy-to-use CLI utility that generates reflection-free Go 1.18+ code for mapp
 ## Features
 
 - 🚀 **Zero Reflection**: Generates type-safe code at compile time
-- 🔄 **Type Conversion**: Built-in converter system with custom converters
 - 📦 **Remote Packages**: Map from structs in any Go module (local or remote)
 - 🌐 **Module Cache Support**: Automatically loads types from Go's module cache
+- 🔄 **Type Conversion**: Convert any field types or formats via custom functions
 - 🏷️ **Flexible Mapping**: Tag-based field mapping and transformations
-- 🎯 **Type Safety**: Compile-time type checking with generics
+- 🪺 **Nesting**: Nested models can be automatically handled
+- 🔍 **Validation**: Prevents generation of broken code, predicts problems, suggests solutions
 - ⚡ **Performance**: Direct field assignments, no runtime overhead
 
 [![Marilyn Manson - No Reflection](https://img.youtube.com/vi/DOj3wDlr_BM/0.jpg)](https://www.youtube.com/watch?v=DOj3wDlr_BM)
@@ -31,7 +32,6 @@ An easy-to-use CLI utility that generates reflection-free Go 1.18+ code for mapp
   - [Field Tags](#field-tags)
   - [Converters](#converters)
   - [Nested Structs](#nested-structs)
-- [Examples](#examples)
 
 ## How It Works
 
@@ -56,50 +56,7 @@ import (
 	"errors"
 	"fmt"
 	db "git.weirdcat.su/weirdcat/automapper-gen/example/db"
-	"sync"
-	"time"
 )
-
-// Converter type for type-safe conversions
-type Converter[From any, To any] func(From) (To, error)
-
-// Global converter registry (thread-safe)
-var converters = make(map[string]any)
-var convertersMu sync.RWMutex
-
-// RegisterConverter registers a type-safe converter
-func RegisterConverter[From any, To any](name string, fn Converter[From, To]) {
-	convertersMu.Lock()
-	defer convertersMu.Unlock()
-	converters[name] = fn
-}
-
-// Convert performs a type-safe conversion using a registered converter
-func Convert[From any, To any](name string, value From) (To, error) {
-	var zero To
-	convertersMu.RLock()
-	converterIface, ok := converters[name]
-	convertersMu.RUnlock()
-	if !ok {
-		return zero, fmt.Errorf("converter %s not registered", name)
-	}
-	converter, ok := converterIface.(Converter[From, To])
-	if !ok {
-		return zero, fmt.Errorf("converter %s has wrong type", name)
-	}
-	return converter(value)
-}
-
-func init() {
-	RegisterConverter("TimeToString", TimeToJSString)
-	RegisterConverter("RoleEnum", StrRoleToEnum)
-	RegisterConverter("InterestEnums", StrInterestsToEnums)
-}
-
-// TimeToJSString converts time.Time to JavaScript ISO 8601 string
-func TimeToJSString(t time.Time) (string, error) {
-	return t.Format(time.RFC3339), nil
-}
 
 // MapFromUserDB maps from db.UserDB to UserDTO
 func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
@@ -111,7 +68,7 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	d.Username = src.Username
 	{
 		var err error
-		d.Role, err = Convert[string, Role]("RoleEnum", src.Role)
+		d.Role, err = StrRoleToEnum(src.Role)
 		if err != nil {
 			return fmt.Errorf("converting field Role: %w", err)
 		}
@@ -123,14 +80,18 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	{
 		d.Pets = make([]PetDTO, len(src.Pets))
 		for i, item := range src.Pets {
-			if err := d.Pets[i].MapFromPetDB(&item); err != nil {
+			var err error
+			err = d.Pets[i].MapFromPetDB(&item)
+			if err != nil {
 				return fmt.Errorf("mapping nested field Pets[%d]: %w", i, err)
 			}
 		}
 	}
 	if src.FeaturedAchievement != nil {
 		var nested AchievementDTO
-		if err := nested.MapFromAchievementDB(src.FeaturedAchievement); err != nil {
+		var err error
+		err = nested.MapFromAchievementDB(src.FeaturedAchievement)
+		if err != nil {
 			return fmt.Errorf("mapping nested field FeaturedAchievement: %w", err)
 		}
 		d.FeaturedAchievement = nested
@@ -138,28 +99,17 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	// FeaturedAchievement: nil pointer will result in zero value
 	{
 		var err error
-		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		d.Interests, err = StrInterestsToEnums(src.Interests)
 		if err != nil {
 			return fmt.Errorf("converting field Interests: %w", err)
 		}
 	}
 	if src.Birthday != nil {
-		var err error
-		var result string
-		result, err = Convert[time.Time, string]("TimeToString", *src.Birthday)
-		if err != nil {
-			return fmt.Errorf("converting field Birthday: %w", err)
-		}
+		result := TimeToJSString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.CreatedAt = TimeToJSString(src.CreatedAt)
 
 	return nil
 }
@@ -174,28 +124,17 @@ func (d *PetDTO) MapFromPetDB(src *db.PetDB) error {
 	d.Name = src.Name
 	{
 		var err error
-		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		d.Interests, err = StrInterestsToEnums(src.Interests)
 		if err != nil {
 			return fmt.Errorf("converting field Interests: %w", err)
 		}
 	}
 	if src.Birthday != nil {
-		var err error
-		var result string
-		result, err = Convert[time.Time, string]("TimeToString", *src.Birthday)
-		if err != nil {
-			return fmt.Errorf("converting field Birthday: %w", err)
-		}
+		result := TimeToJSString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.CreatedAt = TimeToJSString(src.CreatedAt)
 
 	return nil
 }
@@ -208,14 +147,7 @@ func (d *AchievementDTO) MapFromAchievementDB(src *db.AchievementDB) error {
 
 	d.ID = src.ID
 	d.Title = src.Title
-	d.Description = src.Description
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.Description = ToLower(src.Description)
 
 	return nil
 }
@@ -253,7 +185,7 @@ Create an `automapper.json`:
 ```json
 {
   "output": "automappers.go",
-  "defaultConverters": [
+  "converters": [
     {
       "name": "TimeToString",
       "function": "TimeToJSString"
@@ -384,9 +316,8 @@ func main() {
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `package` | string | Yes | Target package name |
 | `output` | string | No | Output filename (default: "automappers.go") |
-| `fieldNameTransform` | string | No | Field name transformation ("snake_to_camel", default) |
+| `converters` | array | No | List converters with name and function |
 | `nilPointersForNull` | bool | No | Use nil pointers for null values |
 | `externalPackages` | array | No | External packages to parse |
 
@@ -451,7 +382,6 @@ type User struct {
 ```json
 // dto/automapper.json
 {
-  "package": "dto",
   "output": "automappers.go",
   "externalPackages": [
     {
@@ -551,20 +481,12 @@ type UserDTO struct {
 
 ### Converters
 
-#### Built-in Converter
-
-The following converter is automatically generated and available for use:
-
-- `TimeToJSString`: Converts `time.Time` to the API-friendly string representation
-
-#### Custom Converters
-
 We often have to deal with mismatching data types or want to adjust the format of 
 the data. We can automate conversion by implementing custom converters in the package
 to do the work for us.
 
 In the same package where we store the destination structs, create a new .go file.
-We suggest the name `converters.go`:
+We suggest the name `converters.go`. Write one or several conversion functions:
 
 ```go
 package dtos
@@ -574,7 +496,7 @@ import (
     "git.weirdcat.su/weirdcat/automapper-gen/example/types"
 )
 
-// Define your converter function
+// Regular converter
 func StrRoleToEnum(role string) (types.Role, error) {
     switch role {
     case "admin":
@@ -586,43 +508,27 @@ func StrRoleToEnum(role string) (types.Role, error) {
     }
 }
 
-// More convertion functions if we need
-func StrInterestsToEnums(interests []string) ([]types.Interest, error) {
-    result := make([]types.Interest, len(interests))
-    for i, interest := range interests {
-        switch interest {
-        case "coding":
-            result[i] = types.InterestCoding
-        case "music":
-            result[i] = types.InterestMusic
-        default:
-            return nil, fmt.Errorf("unknown interest: %s", interest)
-        }
-    }
-    return result, nil
+// Safe converter
+func ToLower(s string) string {
+	return strings.ToLower(s)
 }
 ```
 
-Converters must follow these function signatures, accepting value A and returning values B, error. 
+**Note**: Converter functions must follow the signature `func(T) (U, error)` or `func(T) (U)` and be in the same package as your DTOs.
 
 Update your `automapper.json` to include your converters:
 
 ```json
 {
-  "package": "dtos",
   "output": "automappers.go",
-  "defaultConverters": [
-    {
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    },
+  "converters": [
     {
       "name": "RoleEnum",
       "function": "StrRoleToEnum"
     },
     {
-      "name": "InterestEnums",
-      "function": "StrInterestsToEnums"
+      "name": "ToLower",
+      "function": "Lowercase"
     }
   ],
   "externalPackages": [
@@ -640,18 +546,14 @@ strategy for a given field.
 The `function` parameter references the name of the function that we created. The function will be tied to the previously
 defined tag `name`.
 
-The generated `automappers.go` will automatically include an `init()` function that registers these converters based on their function signatures.
-
 Use in your DTOs:
 
 ```go
 type UserDTO struct {
     Role      Role       `automapper:"converter=RoleEnum"`
-    Interests []Interest `automapper:"converter=InterestEnums"`
+    Bio       string     `automapper:"converter=LowerCase"`
 }
 ```
-
-**Note**: Converter functions must follow the signature `func(T) (U, error)` and be in the same package as your DTOs.
 
 ### Nested Structs
 
@@ -692,69 +594,6 @@ Field DTO `automapper:"dto=TargetDTO"`
 Field DTO `automapper:"dto=TargetDTO,field=SourceFieldName"`
 
 // Cannot combine dto with converter (dto takes precedence)
-```
-
-## Examples
-
-### Example 1: Basic User Mapping
-
-**Source** (`db/user.go`):
-```go
-package db
-
-type User struct {
-    ID       int64
-    Username string
-    Email    string
-}
-```
-
-**DTO** (`dtos/user.go`):
-```go
-package dtos
-
-//automapper:from=db.User
-type UserDTO struct {
-    ID       int64
-    Username string
-    Email    string
-}
-```
-
-**Usage**:
-```go
-user := &db.User{ID: 1, Username: "john", Email: "john@example.com"}
-dto := &dtos.UserDTO{}
-dto.MapFromUser(user)
-```
-
-### Example 2: With Type Conversion
-
-**Source** (`db/product.go`):
-```go
-package db
-
-import "time"
-
-type Product struct {
-    ID        int64
-    Name      string
-    Price     float64
-    CreatedAt time.Time
-}
-```
-
-**DTO** (`dtos/product.go`):
-```go
-package dtos
-
-//automapper:from=db.Product
-type ProductDTO struct {
-    ID        int64
-    Name      string
-    Price     float64
-    CreatedAt string `automapper:"converter=TimeToJSString"`
-}
 ```
 
 ## Acknowledgments

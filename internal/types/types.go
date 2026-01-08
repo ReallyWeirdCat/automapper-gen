@@ -36,3 +36,10 @@ type FieldTypeInfo struct {
 	IsSlice   bool
 	BaseType  string
 }
+
+// FunctionInfo contains information about a function
+type FunctionInfo struct {
+	Name        string
+	ParamTypes  []string
+	ReturnTypes []string
+}

@@ -47,6 +47,5 @@ type PetDTO struct {
 type AchievementDTO struct {
 	ID          int64
 	Title       string
-	Description string
-	CreatedAt   string `automapper:"converter=TimeToString"`
+	Description string `automapper:"converter=ToLower"`
 }

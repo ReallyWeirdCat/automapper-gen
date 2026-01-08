@@ -9,50 +9,7 @@ import (
 	"errors"
 	"fmt"
 	db "git.weirdcat.su/weirdcat/automapper-gen/example/db"
-	"sync"
-	"time"
 )
-
-// Converter type for type-safe conversions
-type Converter[From any, To any] func(From) (To, error)
-
-// Global converter registry (thread-safe)
-var converters = make(map[string]any)
-var convertersMu sync.RWMutex
-
-// RegisterConverter registers a type-safe converter
-func RegisterConverter[From any, To any](name string, fn Converter[From, To]) {
-	convertersMu.Lock()
-	defer convertersMu.Unlock()
-	converters[name] = fn
-}
-
-// Convert performs a type-safe conversion using a registered converter
-func Convert[From any, To any](name string, value From) (To, error) {
-	var zero To
-	convertersMu.RLock()
-	converterIface, ok := converters[name]
-	convertersMu.RUnlock()
-	if !ok {
-		return zero, fmt.Errorf("converter %s not registered", name)
-	}
-	converter, ok := converterIface.(Converter[From, To])
-	if !ok {
-		return zero, fmt.Errorf("converter %s has wrong type", name)
-	}
-	return converter(value)
-}
-
-func init() {
-	RegisterConverter("TimeToString", TimeToJSString)
-	RegisterConverter("RoleEnum", StrRoleToEnum)
-	RegisterConverter("InterestEnums", StrInterestsToEnums)
-}
-
-// TimeToJSString converts time.Time to JavaScript ISO 8601 string
-func TimeToJSString(t time.Time) (string, error) {
-	return t.Format(time.RFC3339), nil
-}
 
 // MapFromUserDB maps from db.UserDB to UserDTO
 func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
@@ -64,7 +21,7 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	d.Username = src.Username
 	{
 		var err error
-		d.Role, err = Convert[string, Role]("RoleEnum", src.Role)
+		d.Role, err = StrRoleToEnum(src.Role)
 		if err != nil {
 			return fmt.Errorf("converting field Role: %w", err)
 		}
@@ -76,14 +33,18 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	{
 		d.Pets = make([]PetDTO, len(src.Pets))
 		for i, item := range src.Pets {
-			if err := d.Pets[i].MapFromPetDB(&item); err != nil {
+			var err error
+			err = d.Pets[i].MapFromPetDB(&item)
+			if err != nil {
 				return fmt.Errorf("mapping nested field Pets[%d]: %w", i, err)
 			}
 		}
 	}
 	if src.FeaturedAchievement != nil {
 		var nested AchievementDTO
-		if err := nested.MapFromAchievementDB(src.FeaturedAchievement); err != nil {
+		var err error
+		err = nested.MapFromAchievementDB(src.FeaturedAchievement)
+		if err != nil {
 			return fmt.Errorf("mapping nested field FeaturedAchievement: %w", err)
 		}
 		d.FeaturedAchievement = nested
@@ -91,28 +52,17 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 	// FeaturedAchievement: nil pointer will result in zero value
 	{
 		var err error
-		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		d.Interests, err = StrInterestsToEnums(src.Interests)
 		if err != nil {
 			return fmt.Errorf("converting field Interests: %w", err)
 		}
 	}
 	if src.Birthday != nil {
-		var err error
-		var result string
-		result, err = Convert[time.Time, string]("TimeToString", *src.Birthday)
-		if err != nil {
-			return fmt.Errorf("converting field Birthday: %w", err)
-		}
+		result := TimeToJSString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.CreatedAt = TimeToJSString(src.CreatedAt)
 
 	return nil
 }
@@ -127,28 +77,17 @@ func (d *PetDTO) MapFromPetDB(src *db.PetDB) error {
 	d.Name = src.Name
 	{
 		var err error
-		d.Interests, err = Convert[[]string, []Interest]("InterestEnums", src.Interests)
+		d.Interests, err = StrInterestsToEnums(src.Interests)
 		if err != nil {
 			return fmt.Errorf("converting field Interests: %w", err)
 		}
 	}
 	if src.Birthday != nil {
-		var err error
-		var result string
-		result, err = Convert[time.Time, string]("TimeToString", *src.Birthday)
-		if err != nil {
-			return fmt.Errorf("converting field Birthday: %w", err)
-		}
+		result := TimeToJSString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.CreatedAt = TimeToJSString(src.CreatedAt)
 
 	return nil
 }
@@ -161,14 +100,7 @@ func (d *AchievementDTO) MapFromAchievementDB(src *db.AchievementDB) error {
 
 	d.ID = src.ID
 	d.Title = src.Title
-	d.Description = src.Description
-	{
-		var err error
-		d.CreatedAt, err = Convert[time.Time, string]("TimeToString", src.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("converting field CreatedAt: %w", err)
-		}
-	}
+	d.Description = ToLower(src.Description)
 
 	return nil
 }
