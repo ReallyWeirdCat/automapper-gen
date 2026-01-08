@@ -384,7 +384,6 @@ func main() {
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `package` | string | Yes | Target package name |
 | `output` | string | No | Output filename (default: "automappers.go") |
 | `nilPointersForNull` | bool | No | Use nil pointers for null values |
 | `externalPackages` | array | No | External packages to parse |
