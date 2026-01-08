@@ -25,7 +25,7 @@ func GenerateMapFromMethod(
 	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
 
 	// Build method body
-	methodBody := buildMethodBody(dto, source, sourceName, cfg, importMap)
+	methodBody := buildMethodBody(dto, source, cfg, importMap)
 
 	// Generate method
 	f.Func().Params(
@@ -39,11 +39,7 @@ func GenerateMapFromMethod(
 
 // buildMethodBody constructs the method body statements
 func buildMethodBody(
-	dto types.DTOMapping,
-	source types.SourceStruct,
-	sourceName string,
-	cfg *config.Config,
-	importMap map[string]string,
+	dto types.DTOMapping, source types.SourceStruct, cfg *config.Config, importMap map[string]string,
 ) []jen.Code {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
@@ -70,7 +66,7 @@ func buildMethodBody(
 
 		// Nested DTO mapping takes precedence
 		if dtoField.NestedDTO != "" {
-			statements = append(statements, buildNestedDTOMapping(dtoField, sourceField, sourceFieldName, sourceName)...)
+			statements = append(statements, buildNestedDTOMapping(dtoField, sourceField, sourceFieldName)...)
 		} else if dtoField.ConverterTag != "" {
 			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, importMap)...)
 		} else {
@@ -104,10 +100,7 @@ func resolveSourceFieldName(
 
 // buildNestedDTOMapping creates statements for nested DTO mapping with pointer and slice handling
 func buildNestedDTOMapping(
-	dtoField types.FieldInfo,
-	sourceField types.FieldTypeInfo,
-	sourceFieldName string,
-	fullSourceName string,
+	dtoField types.FieldInfo, sourceField types.FieldTypeInfo, sourceFieldName string,
 ) []jen.Code {
 	dtoTypeName := dtoField.NestedDTO
 	sourceTypeName := sourceField.BaseType
