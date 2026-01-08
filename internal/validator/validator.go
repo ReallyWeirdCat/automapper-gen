@@ -6,6 +6,7 @@ import (
 
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/config"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/logger"
+	"git.weirdcat.su/weirdcat/automapper-gen/internal/parser"
 	"git.weirdcat.su/weirdcat/automapper-gen/internal/types"
 )
 
@@ -22,7 +23,7 @@ type ValidationError struct {
 	Source     string
 	Field      string
 	Message    string
-	Severity   Severity // "error" or "warning"
+	Severity   Severity
 	Fixable    bool
 	Suggestion string
 }
@@ -57,15 +58,19 @@ func (r *ValidationResult) IsValid() bool {
 
 // Validator validates DTO mappings before code generation
 type Validator struct {
-	cfg     *config.Config
-	sources map[string]types.SourceStruct
-	dtos    map[string]types.DTOMapping
-	visited map[string]bool // for circular dependency detection
+	cfg       *config.Config
+	sources   map[string]types.SourceStruct
+	dtos      map[string]types.DTOMapping
+	functions map[string]types.FunctionInfo
+	visited   map[string]bool
 }
 
 // NewValidator creates a new validator
 func NewValidator(
-	cfg *config.Config, dtos []types.DTOMapping, sources map[string]types.SourceStruct,
+	cfg *config.Config,
+	dtos []types.DTOMapping,
+	sources map[string]types.SourceStruct,
+	functions map[string]types.FunctionInfo,
 ) *Validator {
 	dtoMap := make(map[string]types.DTOMapping)
 	for _, dto := range dtos {
@@ -73,10 +78,11 @@ func NewValidator(
 	}
 
 	return &Validator{
-		cfg:     cfg,
-		sources: sources,
-		dtos:    dtoMap,
-		visited: make(map[string]bool),
+		cfg:       cfg,
+		sources:   sources,
+		dtos:      dtoMap,
+		functions: functions,
+		visited:   make(map[string]bool),
 	}
 }
 
@@ -93,6 +99,9 @@ func (v *Validator) Validate() *ValidationResult {
 	result.Stats["total_dtos"] = len(v.dtos)
 	result.Stats["total_sources"] = len(v.sources)
 
+	// Validate converter functions exist
+	v.validateConverterFunctions(result)
+
 	totalFields := 0
 	for _, dto := range v.dtos {
 		totalFields += len(dto.Fields)
@@ -107,7 +116,7 @@ func (v *Validator) Validate() *ValidationResult {
 	result.Stats["errors"] = len(result.Errors)
 	result.Stats["warnings"] = len(result.Warnings)
 
-	// Print summary with color-coded severity
+	// Print summary
 	if len(result.Warnings) > 0 {
 		logger.Warning("Found %d warnings", len(result.Warnings))
 		for _, w := range result.Warnings {
@@ -133,6 +142,56 @@ func (v *Validator) Validate() *ValidationResult {
 	})
 
 	return result
+}
+
+// validateConverterFunctions validates that all converter functions exist
+func (v *Validator) validateConverterFunctions(result *ValidationResult) {
+	logger.Verbose("Validating converter functions...")
+
+	converterMap := make(map[string]config.ConverterDef)
+	for _, conv := range v.cfg.DefaultConverters {
+		converterMap[conv.Name] = conv
+
+		// Check if function exists
+		fn, exists := v.functions[conv.Function]
+		if !exists {
+			result.Errors = append(result.Errors, ValidationError{
+				Message:    fmt.Sprintf("Converter function '%s' (for converter '%s') not found in package", conv.Function, conv.Name),
+				Severity:   SeverityError,
+				Suggestion: fmt.Sprintf("Add function '%s' to your package or fix the function name in automapper.json", conv.Function),
+			})
+			continue
+		}
+
+		// Validate function signature
+		if conv.Trusted {
+			// Safe converter: func(T) U
+			if !parser.IsSafeConverterSignature(fn) {
+				result.Errors = append(result.Errors, ValidationError{
+					Message: fmt.Sprintf("Converter function '%s' marked as safe but has wrong signature (expected: func(T) U, got: %d params, %d returns)",
+						conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
+					Severity:   SeverityError,
+					Suggestion: "Change signature to func(T) U or set 'safe': false in automapper.json",
+				})
+			} else {
+				logger.Debug("  Safe converter '%s' (%s) validated", conv.Name, conv.Function)
+			}
+		} else {
+			// Error-returning converter: func(T) (U, error)
+			if !parser.IsErrorReturningConverterSignature(fn) {
+				result.Errors = append(result.Errors, ValidationError{
+					Message: fmt.Sprintf("Converter function '%s' has wrong signature (expected: func(T) (U, error), got: %d params, %d returns)",
+						conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
+					Severity:   SeverityError,
+					Suggestion: "Change signature to func(T) (U, error) or set 'safe': true if it doesn't return error",
+				})
+			} else {
+				logger.Debug("  Error-returning converter '%s' (%s) validated", conv.Name, conv.Function)
+			}
+		}
+	}
+
+	logger.Verbose("Converter functions validated: %d", len(v.cfg.DefaultConverters))
 }
 
 // validateDTOMapping validates a single DTO to source mapping
@@ -281,7 +340,7 @@ func (v *Validator) validateConverter(
 ) {
 	converterName := field.ConverterTag
 
-	// Check if converter is registered in default converters
+	// Check if converter exists in config
 	found := false
 	for _, conv := range v.cfg.DefaultConverters {
 		if conv.Name == converterName {
@@ -292,23 +351,22 @@ func (v *Validator) validateConverter(
 	}
 
 	if !found {
-		result.Warnings = append(result.Warnings, ValidationError{
+		result.Errors = append(result.Errors, ValidationError{
 			DTO:        dto.Name,
 			Source:     sourceName,
 			Field:      field.Name,
 			Message:    fmt.Sprintf("Converter '%s' not found in defaultConverters", converterName),
-			Severity:   SeverityWarning,
-			Fixable:    true,
-			Suggestion: "Register converter in automapper.json or ensure it's registered at runtime",
+			Severity:   SeverityError,
+			Suggestion: "Add converter to automapper.json defaultConverters list",
 		})
+		return
 	}
 
 	// Validate that types are compatible for conversion
-	// Remove pointer/slice prefixes for base type comparison
 	srcBaseType := extractBaseType(sourceField.Type)
 	dstBaseType := extractBaseType(field.Type)
 
-	// We can't validate custom converters at generation time, but we can warn about obvious issues
+	// Warn if types are identical
 	if srcBaseType == dstBaseType {
 		result.Warnings = append(result.Warnings, ValidationError{
 			DTO:        dto.Name,
@@ -348,7 +406,7 @@ func (v *Validator) validateDirectMapping(
 		return
 	}
 
-	// Warn about pointer conversions (they're valid but might cause unexpected behavior)
+	// Warn about pointer conversions
 	dtoIsPointer := strings.HasPrefix(field.Type, "*")
 	srcIsPointer := sourceField.IsPointer
 
@@ -387,28 +445,25 @@ func (v *Validator) resolveSourceFieldName(
 
 // areTypesCompatible checks if two types can be directly assigned
 func (v *Validator) areTypesCompatible(type1, type2 string) bool {
-	// Remove pointer and slice prefixes for comparison
 	base1 := extractBaseType(type1)
 	base2 := extractBaseType(type2)
 
-	// Exact match
 	if base1 == base2 {
 		return true
 	}
 
-	// Check for package-qualified types that might be the same
-	// e.g., "time.Time" vs "Time" when both refer to time.Time
+	// Check for package-qualified types
 	if strings.Contains(base1, ".") && !strings.Contains(base2, ".") {
 		parts := strings.Split(base1, ".")
 		if parts[len(parts)-1] == base2 {
-			return true // Might be compatible, let compiler decide
+			return true
 		}
 	}
 
 	if strings.Contains(base2, ".") && !strings.Contains(base1, ".") {
 		parts := strings.Split(base2, ".")
 		if parts[len(parts)-1] == base1 {
-			return true // Might be compatible, let compiler decide
+			return true
 		}
 	}
 
@@ -416,7 +471,6 @@ func (v *Validator) areTypesCompatible(type1, type2 string) bool {
 }
 
 // detectCircularDependency checks for circular DTO dependencies
-// A circular dependency exists if: starting from nestedDTO, we can reach back to currentDTO
 func (v *Validator) detectCircularDependency(currentDTO, nestedDTO string) bool {
 	visited := make(map[string]bool)
 	return v.canReach(nestedDTO, currentDTO, visited)
@@ -424,19 +478,16 @@ func (v *Validator) detectCircularDependency(currentDTO, nestedDTO string) bool 
 
 // canReach checks if we can reach 'to' starting from 'from' by following nested DTO references
 func (v *Validator) canReach(from, to string, visited map[string]bool) bool {
-	// If we've reached the target, there's a circular dependency
 	if from == to {
 		return true
 	}
 
-	// Avoid infinite loops
 	if visited[from] {
 		return false
 	}
 
 	visited[from] = true
 
-	// Check all nested DTOs in 'from' to see if any can reach 'to'
 	if dto, exists := v.dtos[from]; exists {
 		for _, field := range dto.Fields {
 			if field.NestedDTO != "" {

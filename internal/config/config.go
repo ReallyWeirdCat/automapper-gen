@@ -7,12 +7,14 @@ import (
 
 // Config represents the automapper configuration
 type Config struct {
-	Package            string            `json:"package"`
-	Output             string            `json:"output"`
-	DefaultConverters  []ConverterDef    `json:"defaultConverters"`
-	FieldNameTransform string            `json:"fieldNameTransform"`
-	NilPointersForNull bool              `json:"nilPointersForNull"`
-	ExternalPackages   []ExternalPackage `json:"externalPackages"`
+	Package              string            `json:"package"`
+	Output               string            `json:"output"`
+	DefaultConverters    []ConverterDef    `json:"defaultConverters"`
+	FieldNameTransform   string            `json:"fieldNameTransform"`
+	NilPointersForNull   bool              `json:"nilPointersForNull"`
+	ExternalPackages     []ExternalPackage `json:"externalPackages"`
+	EnableSafeMappers    bool              `json:"-"` // This feature idea was naive and stupid
+	EnableUnsafeWrappers bool              `json:"-"` // Even stupider
 }
 
 // ExternalPackage defines an external package to include in parsing
@@ -26,6 +28,7 @@ type ExternalPackage struct {
 type ConverterDef struct {
 	Name     string `json:"name"`
 	Function string `json:"function"`
+	Trusted  bool   `json:"trusted"`
 }
 
 // Load reads and parses the configuration file

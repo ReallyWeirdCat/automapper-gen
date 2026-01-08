@@ -16,15 +16,21 @@ import (
 // ParsePackage parses the main package and external packages
 func ParsePackage(
 	pkgPath string, cfg *config.Config,
-) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
+) (
+	[]types.DTOMapping,
+	map[string]types.SourceStruct,
+	map[string]types.FunctionInfo,
+	string,
+	error,
+) {
 	// Parse main package using go/packages
 	logger.Verbose("Parsing main package: %s", pkgPath)
-	dtos, sources, pkgName, err := parsePackageWithGoPackages(pkgPath, "", "", false, cfg)
+	dtos, sources, functions, pkgName, err := parsePackageWithGoPackages(pkgPath, "", "", false, cfg)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, "", err
 	}
 
-	logger.Verbose("Main package parsed: %d DTOs, %d sources", len(dtos), len(sources))
+	logger.Verbose("Main package parsed: %d DTOs, %d sources, %d functions", len(dtos), len(sources), len(functions))
 
 	// Parse external packages
 	if len(cfg.ExternalPackages) > 0 {
@@ -52,7 +58,7 @@ func ParsePackage(
 			}
 
 			logger.Verbose("  Loading from local path: %s", localPath)
-			_, extSources, _, parseErr = parsePackageWithGoPackages(localPath, alias, extPkg.ImportPath, true, cfg)
+			_, extSources, _, _, parseErr = parsePackageWithGoPackages(localPath, alias, extPkg.ImportPath, true, cfg)
 		}
 
 		// Load from module cache if local path not available or failed
@@ -66,7 +72,7 @@ func ParsePackage(
 		}
 
 		if parseErr != nil {
-			return nil, nil, "", fmt.Errorf("loading external package %s: %w", extPkg.ImportPath, parseErr)
+			return nil, nil, nil, "", fmt.Errorf("loading external package %s: %w", extPkg.ImportPath, parseErr)
 		}
 
 		// Merge sources
@@ -78,13 +84,19 @@ func ParsePackage(
 		logger.Verbose("  Loaded %d structs from %s", len(extSources), extPkg.ImportPath)
 	}
 
-	return dtos, sources, pkgName, nil
+	return dtos, sources, functions, pkgName, nil
 }
 
 // parsePackageWithGoPackages uses go/packages to parse a package
 func parsePackageWithGoPackages(
 	pkgPath string, alias string, importPath string, isExternal bool, cfg *config.Config,
-) ([]types.DTOMapping, map[string]types.SourceStruct, string, error) {
+) (
+	[]types.DTOMapping,
+	map[string]types.SourceStruct,
+	map[string]types.FunctionInfo,
+	string,
+	error,
+) {
 	logger.Debug("Parsing package with go/packages: %s (external: %v)", pkgPath, isExternal)
 
 	// Configure package loading
@@ -101,11 +113,11 @@ func parsePackageWithGoPackages(
 	logger.Debug("Invoking packages.Load for directory: %s", pkgPath)
 	pkgs, err := packages.Load(pkgCfg, ".")
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("loading package: %w", err)
+		return nil, nil, nil, "", fmt.Errorf("loading package: %w", err)
 	}
 
 	if len(pkgs) == 0 {
-		return nil, nil, "", fmt.Errorf("no packages found in: %s", pkgPath)
+		return nil, nil, nil, "", fmt.Errorf("no packages found in: %s", pkgPath)
 	}
 
 	// Use the first package (there should typically be only one when loading ".")
@@ -118,13 +130,14 @@ func parsePackageWithGoPackages(
 			errMsgs = append(errMsgs, e.Error())
 			logger.Debug("  Package error: %s", e.Error())
 		}
-		return nil, nil, "", fmt.Errorf("package errors: %s", strings.Join(errMsgs, "; "))
+		return nil, nil, nil, "", fmt.Errorf("package errors: %s", strings.Join(errMsgs, "; "))
 	}
 
 	logger.Debug("Package loaded: %s (files: %d)", pkg.Name, len(pkg.Syntax))
 
 	dtos := []types.DTOMapping{}
 	sources := make(map[string]types.SourceStruct)
+	functions := make(map[string]types.FunctionInfo)
 	pkgName := pkg.Name
 
 	if importPath == "" {
@@ -137,28 +150,18 @@ func parsePackageWithGoPackages(
 
 	fileCount := 0
 	totalStructs := 0
+	totalFunctions := 0
 	totalFiles := 0
 
 	// Get the correct file list to use
-	// pkg.GoFiles contains the original source files
 	fileList := pkg.GoFiles
 	if len(fileList) == 0 {
-		// Fallback to CompiledGoFiles if GoFiles is empty
 		fileList = pkg.CompiledGoFiles
 	}
 
 	logger.Debug("Using file list with %d files", len(fileList))
 
-	// Verify we have the same number of syntax trees as files
-	if len(pkg.Syntax) != len(fileList) {
-		logger.Debug("Warning: Syntax trees (%d) != file list (%d)", len(pkg.Syntax), len(fileList))
-		// Use the minimum to avoid index errors
-		if len(pkg.Syntax) > len(fileList) {
-			logger.Debug("Truncating syntax trees to match file list")
-		}
-	}
-
-	// Count total files to process (for progress display)
+	// Count total files to process
 	for i := range pkg.Syntax {
 		if i >= len(fileList) {
 			continue
@@ -228,6 +231,16 @@ func parsePackageWithGoPackages(
 			logger.Verbose("    Found %d structs in %s", structsInFile, baseName)
 		}
 
+		// Parse functions (only in non-external packages)
+		if !isExternal {
+			fileFunctions := ParseFunctions(file)
+			for name, fn := range fileFunctions {
+				functions[name] = fn
+				totalFunctions++
+				logger.Debug("    Found function: %s (params: %d, returns: %d)", name, len(fn.ParamTypes), len(fn.ReturnTypes))
+			}
+		}
+
 		// Parse DTOs (only in non-external packages)
 		if !isExternal {
 			dtoCount := 0
@@ -288,6 +301,6 @@ func parsePackageWithGoPackages(
 		}
 	}
 
-	logger.Debug("Completed parsing package: %d DTOs, %d sources", len(dtos), len(sources))
-	return dtos, sources, pkgName, nil
+	logger.Debug("Completed parsing package: %d DTOs, %d sources, %d functions", len(dtos), len(sources), len(functions))
+	return dtos, sources, functions, pkgName, nil
 }

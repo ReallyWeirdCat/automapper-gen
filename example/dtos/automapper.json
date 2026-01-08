@@ -1,23 +1,29 @@
 {
-  "output": "automappers.go",
-  "defaultConverters": [
-    {
-      "name": "TimeToString",
-      "function": "TimeToJSString"
-    },
-    {
-      "name": "RoleEnum",
-      "function": "StrRoleToEnum"
-    },
-    {
-      "name": "InterestEnums",
-      "function": "StrInterestsToEnums"
-    }
-  ],
-  "externalPackages": [
-    {
-      "alias": "db",
-      "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db"
-    }
-  ]
+    "output": "automappers.go",
+    "defaultConverters": [
+        {
+            "name": "TimeToString",
+            "function": "TimeToJSString",
+            "trusted": true
+        },
+        {
+            "name": "RoleEnum",
+            "function": "StrRoleToEnum"
+        },
+        {
+            "name": "InterestEnums",
+            "function": "StrInterestsToEnums"
+        },
+        {
+            "name": "ToLower",
+            "function": "ToLower",
+            "trusted": true
+        }
+    ],
+    "externalPackages": [
+        {
+            "alias": "db",
+            "importPath": "git.weirdcat.su/weirdcat/automapper-gen/example/db"
+        }
+    ]
 }

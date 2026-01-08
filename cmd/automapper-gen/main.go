@@ -72,6 +72,8 @@ func run(pkgPath string, startTime time.Time) error {
 	logger.Verbose("Output file: %s", cfg.Output)
 	logger.Verbose("Field transform: %s", cfg.FieldNameTransform)
 	logger.Verbose("External packages: %d", len(cfg.ExternalPackages))
+	logger.Verbose("Enable safe mappers: %v", cfg.EnableSafeMappers)
+	logger.Verbose("Enable unsafe wrappers: %v", cfg.EnableUnsafeWrappers)
 
 	if len(cfg.ExternalPackages) > 0 {
 		for _, pkg := range cfg.ExternalPackages {
@@ -82,7 +84,11 @@ func run(pkgPath string, startTime time.Time) error {
 	if len(cfg.DefaultConverters) > 0 {
 		logger.Verbose("Default converters: %d", len(cfg.DefaultConverters))
 		for _, conv := range cfg.DefaultConverters {
-			logger.Debug("  - %s -> %s", conv.Name, conv.Function)
+			safeStr := ""
+			if conv.Trusted {
+				safeStr = " [safe]"
+			}
+			logger.Debug("  - %s -> %s%s", conv.Name, conv.Function, safeStr)
 		}
 	}
 
@@ -91,7 +97,7 @@ func run(pkgPath string, startTime time.Time) error {
 	currentStep++
 	stepStart = time.Now()
 
-	dtos, sources, pkgName, err := parser.ParsePackage(pkgPath, cfg)
+	dtos, sources, functions, pkgName, err := parser.ParsePackage(pkgPath, cfg)
 	if err != nil {
 		return fmt.Errorf("parsing package: %w", err)
 	}
@@ -100,6 +106,7 @@ func run(pkgPath string, startTime time.Time) error {
 	logger.Verbose("Package name: %s", pkgName)
 	logger.Verbose("Found %d DTOs with automapper annotations", len(dtos))
 	logger.Verbose("Found %d source structs", len(sources))
+	logger.Verbose("Found %d functions", len(functions))
 
 	// List DTOs found
 	for _, dto := range dtos {
@@ -114,6 +121,13 @@ func run(pkgPath string, startTime time.Time) error {
 				external = fmt.Sprintf(" [external: %s]", source.ImportPath)
 			}
 			logger.Debug("Source: %s (fields: %d)%s", name, len(source.Fields), external)
+		}
+	}
+
+	// List functions
+	if logger.IsDebugEnabled() {
+		for name, fn := range functions {
+			logger.Debug("Function: %s (params: %d, returns: %d)", name, len(fn.ParamTypes), len(fn.ReturnTypes))
 		}
 	}
 
@@ -135,7 +149,7 @@ func run(pkgPath string, startTime time.Time) error {
 		currentStep++
 		stepStart = time.Now()
 
-		v := validator.NewValidator(cfg, dtos, sources)
+		v := validator.NewValidator(cfg, dtos, sources, functions)
 		validationResult := v.Validate()
 
 		logger.Progress(stepStart, "Validation complete")
