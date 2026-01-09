@@ -25,7 +25,12 @@ func GenerateMapFromMethod(
 
 	f.Comment(fmt.Sprintf("%s maps from %s to %s", methodName, sourceName, dto.Name))
 
-	methodBody := buildMethodBody(dto, source, cfg, functions)
+	methodBody, ignoredFields := buildMethodBody(dto, source, cfg, functions)
+
+	// Add comment about ignored fields if any
+	if len(ignoredFields) > 0 {
+		f.Comment(fmt.Sprintf("Ignored fields: %s", strings.Join(ignoredFields, ", ")))
+	}
 
 	// Generate method
 	f.Func().Params(
@@ -38,18 +43,21 @@ func GenerateMapFromMethod(
 }
 
 // buildMethodBody constructs the regular method body with error handling
+// Returns statements and list of ignored field names
 func buildMethodBody(
 	dto types.DTOMapping,
 	source types.SourceStruct,
 	cfg *config.Config,
 	functions map[string]types.FunctionInfo,
-) []jen.Code {
+) ([]jen.Code, []string) {
 	statements := []jen.Code{
 		jen.If(jen.Id("src").Op("==").Nil()).Block(
 			jen.Return(jen.Qual("errors", "New").Call(jen.Lit("source is nil"))),
 		),
 		jen.Line(),
 	}
+
+	var ignoredFields []string
 
 	// Build converter map
 	converterMap := make(map[string]config.ConverterDef)
@@ -60,6 +68,7 @@ func buildMethodBody(
 	// Generate field mappings
 	for _, dtoField := range dto.Fields {
 		if dtoField.Ignore {
+			ignoredFields = append(ignoredFields, dtoField.Name)
 			continue
 		}
 
@@ -70,6 +79,7 @@ func buildMethodBody(
 			statements = append(statements,
 				jen.Comment(fmt.Sprintf("%s: not found in source, will be zero value", dtoField.Name)),
 			)
+			ignoredFields = append(ignoredFields, dtoField.Name)
 			continue
 		}
 
@@ -79,25 +89,33 @@ func buildMethodBody(
 		} else if dtoField.ConverterTag != "" {
 			conv, exists := converterMap[dtoField.ConverterTag]
 			if !exists {
-				// This should be caught by validation, but handle it gracefully
-				statements = append(statements,
-					jen.Comment(fmt.Sprintf("%s: converter '%s' not found", dtoField.Name, dtoField.ConverterTag)),
-				)
-				continue
+				// Try to find converter function directly by name
+				fn, fnExists := functions[dtoField.ConverterTag]
+				if !fnExists {
+					statements = append(statements,
+						jen.Comment(fmt.Sprintf("%s: converter '%s' not found", dtoField.Name, dtoField.ConverterTag)),
+					)
+					ignoredFields = append(ignoredFields, dtoField.Name)
+					continue
+				}
+				
+				// Use function directly as converter
+				isSafe := parser.IsSafeConverterSignature(fn)
+				statements = append(statements, buildConverterMappingDirect(dtoField, sourceField, sourceFieldName, dtoField.ConverterTag, isSafe)...)
+			} else {
+				// Check if converter is safe (1 return) or error-returning (2 returns)
+				fn, fnExists := functions[conv.Function]
+				isSafe := fnExists && parser.IsSafeConverterSignature(fn)
+
+				statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, conv, isSafe)...)
 			}
-
-			// Check if converter is safe (1 return) or error-returning (2 returns)
-			fn, fnExists := functions[conv.Function]
-			isSafe := fnExists && parser.IsSafeConverterSignature(fn)
-
-			statements = append(statements, buildConverterMapping(dtoField, sourceField, sourceFieldName, conv, isSafe)...)
 		} else {
 			statements = append(statements, buildFieldMapping(dtoField, sourceField, sourceFieldName)...)
 		}
 	}
 
 	statements = append(statements, jen.Line(), jen.Return(jen.Nil()))
-	return statements
+	return statements, ignoredFields
 }
 
 // resolveSourceFieldName determines the source field name for a DTO field
@@ -109,6 +127,160 @@ func resolveSourceFieldName(
 	}
 
 	return dtoField.Name
+}
+
+// buildConverterMappingDirect creates statements for converter used directly by function name
+func buildConverterMappingDirect(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	functionName string,
+	isSafe bool,
+) []jen.Code {
+	if isSafe {
+		return buildSafeConverterMappingDirect(dtoField, sourceField, sourceFieldName, functionName)
+	}
+	return buildErrorReturningConverterMappingDirect(dtoField, sourceField, sourceFieldName, functionName)
+}
+
+// buildSafeConverterMappingDirect creates statements for safe converter (no error) used directly
+func buildSafeConverterMappingDirect(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	functionName string,
+) []jen.Code {
+	srcIsPointer := sourceField.IsPointer
+	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
+
+	// Case 1: Source is pointer
+	if srcIsPointer {
+		if dstIsPointer {
+			return []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Id("result").Op(":=").Id(functionName).Call(
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+					jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in nil", dtoField.Name)),
+			}
+		} else {
+			return []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Id("d").Dot(dtoField.Name).Op("=").Id(functionName).Call(
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in zero value", dtoField.Name)),
+			}
+		}
+	}
+
+	// Case 2: Source is value, destination is pointer
+	if dstIsPointer {
+		return []jen.Code{
+			jen.Block(
+				jen.Id("result").Op(":=").Id(functionName).Call(
+					jen.Id("src").Dot(sourceFieldName),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+			),
+		}
+	}
+
+	// Case 3: Both are values
+	return []jen.Code{
+		jen.Id("d").Dot(dtoField.Name).Op("=").Id(functionName).Call(
+			jen.Id("src").Dot(sourceFieldName),
+		),
+	}
+}
+
+// buildErrorReturningConverterMappingDirect creates statements for error-returning converter used directly
+func buildErrorReturningConverterMappingDirect(
+	dtoField types.FieldInfo,
+	sourceField types.FieldTypeInfo,
+	sourceFieldName string,
+	functionName string,
+) []jen.Code {
+	srcIsPointer := sourceField.IsPointer
+	dstIsPointer := strings.HasPrefix(dtoField.Type, "*")
+
+	var statements []jen.Code
+
+	// Case 1: Source is pointer
+	if srcIsPointer {
+		if dstIsPointer {
+			statements = []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Var().Id("result").Id(ExtractBaseType(dtoField.Type)),
+					jen.Var().Id("err").Error(),
+					jen.List(jen.Id("result"), jen.Id("err")).Op("=").Id(functionName).Call(
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+					jen.If(jen.Id("err").Op("!=").Nil()).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+							jen.Id("err"),
+						)),
+					),
+					jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in nil", dtoField.Name)),
+			}
+		} else {
+			statements = []jen.Code{
+				jen.If(jen.Id("src").Dot(sourceFieldName).Op("!=").Nil()).Block(
+					jen.Var().Id("err").Error(),
+					jen.List(jen.Id("d").Dot(dtoField.Name), jen.Id("err")).Op("=").Id(functionName).Call(
+						jen.Op("*").Id("src").Dot(sourceFieldName),
+					),
+					jen.If(jen.Id("err").Op("!=").Nil()).Block(
+						jen.Return(jen.Qual("fmt", "Errorf").Call(
+							jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+							jen.Id("err"),
+						)),
+					),
+				),
+				jen.Comment(fmt.Sprintf("// %s: nil pointer will result in zero value", dtoField.Name)),
+			}
+		}
+	} else if dstIsPointer {
+		statements = []jen.Code{
+			jen.Block(
+				jen.Var().Id("result").Id(ExtractBaseType(dtoField.Type)),
+				jen.Var().Id("err").Error(),
+				jen.List(jen.Id("result"), jen.Id("err")).Op("=").Id(functionName).Call(
+					jen.Id("src").Dot(sourceFieldName),
+				),
+				jen.If(jen.Id("err").Op("!=").Nil()).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+						jen.Id("err"),
+					)),
+				),
+				jen.Id("d").Dot(dtoField.Name).Op("=").Op("&").Id("result"),
+			),
+		}
+	} else {
+		statements = []jen.Code{
+			jen.Block(
+				jen.Var().Id("err").Error(),
+				jen.List(jen.Id("d").Dot(dtoField.Name), jen.Id("err")).Op("=").Id(functionName).Call(
+					jen.Id("src").Dot(sourceFieldName),
+				),
+				jen.If(jen.Id("err").Op("!=").Nil()).Block(
+					jen.Return(jen.Qual("fmt", "Errorf").Call(
+						jen.Lit(fmt.Sprintf("converting field %s: %%w", dtoField.Name)),
+						jen.Id("err"),
+					)),
+				),
+			),
+		}
+	}
+
+	return statements
 }
 
 // buildSafeConverterMapping creates statements for safe converter (no error)

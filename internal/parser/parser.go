@@ -237,7 +237,13 @@ func parsePackageWithGoPackages(
 			for name, fn := range fileFunctions {
 				functions[name] = fn
 				totalFunctions++
-				logger.Debug("    Found function: %s (params: %d, returns: %d)", name, len(fn.ParamTypes), len(fn.ReturnTypes))
+				
+				if fn.IsConverter {
+					logger.Debug("    Found converter: %s (params: %d, returns: %d)", name, len(fn.ParamTypes), len(fn.ReturnTypes))
+				}
+				if fn.IsInverter {
+					logger.Debug("    Found inverter: %s inverts %s", name, fn.InvertsFunc)
+				}
 			}
 		}
 
@@ -249,25 +255,37 @@ func parsePackageWithGoPackages(
 					for _, spec := range genDecl.Specs {
 						if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 							var annotation string
+							var bidirectional bool
+							
 							if genDecl.Doc != nil {
 								annotation = ExtractAnnotation(genDecl.Doc)
+								bidirectional = ExtractBidirectionalFlag(genDecl.Doc)
 							}
 							if annotation == "" && typeSpec.Doc != nil {
 								annotation = ExtractAnnotation(typeSpec.Doc)
+								if !bidirectional {
+									bidirectional = ExtractBidirectionalFlag(typeSpec.Doc)
+								}
 							}
 
 							if annotation != "" {
 								dtoCount++
 								if structType, ok := typeSpec.Type.(*ast.StructType); ok {
 									dto := types.DTOMapping{
-										Name:        typeSpec.Name.Name,
-										Sources:     ParseSourceList(annotation),
-										Fields:      ParseFields(structType),
-										PackageName: pkgName,
+										Name:          typeSpec.Name.Name,
+										Sources:       ParseSourceList(annotation),
+										Fields:        ParseFields(structType),
+										PackageName:   pkgName,
+										Bidirectional: bidirectional,
 									}
 									dtos = append(dtos, dto)
-									logger.Verbose("    Found DTO: %s <- %v (%d fields)",
-										dto.Name, dto.Sources, len(dto.Fields))
+									
+									bidirStr := ""
+									if bidirectional {
+										bidirStr = " [bidirectional]"
+									}
+									logger.Verbose("    Found DTO: %s <- %v (%d fields)%s",
+										dto.Name, dto.Sources, len(dto.Fields), bidirStr)
 
 									// Log field details in debug mode
 									if logger.IsDebugEnabled() {

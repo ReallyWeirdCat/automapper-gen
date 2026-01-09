@@ -9,6 +9,7 @@ import (
 // We can define custom converter functions here
 
 // Convert string to Role enum
+//automapper:converter
 func StrRoleToEnum(roleStr string) (Role, error) {
 	switch strings.ToLower(roleStr) {
 	case "client":
@@ -28,6 +29,7 @@ func StrRoleToEnum(roleStr string) (Role, error) {
 }
 
 // Convert array of strings to array of Interest enums
+//automapper:converter
 func StrInterestsToEnums(interestsStr []string) ([]Interest, error) {
 	var interests []Interest // Slice to store converted interests
 
@@ -51,11 +53,23 @@ func StrInterestsToEnums(interestsStr []string) ([]Interest, error) {
 }
 
 // TimeToJSString converts time.Time to JavaScript ISO 8601 string
-func TimeToJSString(t time.Time) string {
+//automapper:converter
+func TimeToString(t time.Time) string {
 	return t.Format(time.RFC3339)
 }
 
+// StringToTime converts a JavaScript ISO 8601 string to time.Time
+//automapper:inverter=TimeToString
+func StringToTime(s string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, errors.New("invalid time format")
+	}
+	return t, nil
+}
+
 // Converts string to lowercase
+//automapper:converter
 func ToLower(s string) string {
 	return strings.ToLower(s)
 }

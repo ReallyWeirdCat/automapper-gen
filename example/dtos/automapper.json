@@ -1,23 +1,5 @@
 {
     "output": "automappers.go",
-    "converters": [
-        {
-            "name": "TimeToString",
-            "function": "TimeToJSString"
-        },
-        {
-            "name": "RoleEnum",
-            "function": "StrRoleToEnum"
-        },
-        {
-            "name": "InterestEnums",
-            "function": "StrInterestsToEnums"
-        },
-        {
-            "name": "ToLower",
-            "function": "ToLower"
-        }
-    ],
     "externalPackages": [
         {
             "alias": "db",

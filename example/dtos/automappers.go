@@ -58,11 +58,56 @@ func (d *UserDTO) MapFromUserDB(src *db.UserDB) error {
 		}
 	}
 	if src.Birthday != nil {
-		result := TimeToJSString(*src.Birthday)
+		result := TimeToString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	d.CreatedAt = TimeToJSString(src.CreatedAt)
+	d.CreatedAt = TimeToString(src.CreatedAt)
+
+	return nil
+}
+
+// MapToUserDB maps from UserDTO to db.UserDB
+// Ignored fields: Role, Pets, FeaturedAchievement, Interests
+func (d *UserDTO) MapToUserDB(dst *db.UserDB) error {
+	if dst == nil {
+		return errors.New("destination is nil")
+	}
+
+	dst.ID = d.ID
+	dst.Username = d.Username
+	// Role: converter has no inverter, skipped
+	{
+		v := d.About
+		dst.About = &v
+	}
+	// Pets: nested DTO mapping not supported in MapTo, skipped
+	// FeaturedAchievement: nested DTO mapping not implemented in MapTo, skipped
+	// Interests: converter has no inverter, skipped
+	if d.Birthday != nil {
+		// FIXME: Generated output uses unimported library:
+		// var result time.Time
+		// var err error
+		// result, err = StringToTime(*d.Birthday)
+		// if err != nil {
+		// 	return fmt.Errorf("converting field Birthday: %w", err)
+		// }
+		{
+			result, err := StringToTime(*d.Birthday)
+			if err != nil {
+				return fmt.Errorf("converting field Birthday: %w", err)
+			}
+			dst.Birthday = &result
+		}
+	}
+	// Birthday: nil pointer will result in nil
+	{
+		var err error
+		dst.CreatedAt, err = StringToTime(d.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("converting field CreatedAt: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -83,11 +128,11 @@ func (d *PetDTO) MapFromPetDB(src *db.PetDB) error {
 		}
 	}
 	if src.Birthday != nil {
-		result := TimeToJSString(*src.Birthday)
+		result := TimeToString(*src.Birthday)
 		d.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
-	d.CreatedAt = TimeToJSString(src.CreatedAt)
+	d.CreatedAt = TimeToString(src.CreatedAt)
 
 	return nil
 }
@@ -101,6 +146,20 @@ func (d *AchievementDTO) MapFromAchievementDB(src *db.AchievementDB) error {
 	d.ID = src.ID
 	d.Title = src.Title
 	d.Description = ToLower(src.Description)
+
+	return nil
+}
+
+// MapToAchievementDB maps from AchievementDTO to db.AchievementDB
+// Ignored fields: Description
+func (d *AchievementDTO) MapToAchievementDB(dst *db.AchievementDB) error {
+	if dst == nil {
+		return errors.New("destination is nil")
+	}
+
+	dst.ID = d.ID
+	dst.Title = d.Title
+	// Description: converter has no inverter, skipped
 
 	return nil
 }

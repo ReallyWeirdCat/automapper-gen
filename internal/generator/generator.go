@@ -39,6 +39,20 @@ func Generate(
 		}
 	}
 
+	// Build converter -> inverter map
+	logger.Verbose("Building converter-inverter map...")
+	converterMap := buildConverterMap(functions)
+	if len(converterMap) > 0 {
+		logger.Verbose("Converter-inverter mappings: %d", len(converterMap))
+		for conv, info := range converterMap {
+			if info.HasInverter {
+				logger.Debug("  %s <-> %s (bidirectional)", conv, info.InverterFunc)
+			} else {
+				logger.Debug("  %s (unidirectional)", conv)
+			}
+		}
+	}
+
 	// Generate MapFrom methods
 	logger.Verbose("Generating MapFrom methods for %d DTOs...", len(dtos))
 	totalMethods := 0
@@ -62,10 +76,24 @@ func Generate(
 
 			GenerateMapFromMethod(f, dto, source, sourceName, methodName, cfg, importMap, functions)
 			totalMethods++
+
+			// Generate MapTo if bidirectional
+			if dto.Bidirectional {
+				mapToMethodName := "MapTo"
+				if len(dto.Sources) > 1 || source.IsExternal {
+					mapToMethodName = "MapTo" + ExtractTypeNameWithoutPackage(sourceName)
+				}
+
+				logger.Debug("  [%d/%d] Generating %s.%s (target: %s) [bidirectional]",
+					j+1, len(dto.Sources), dto.Name, mapToMethodName, sourceName)
+
+				GenerateMapToMethod(f, dto, source, sourceName, mapToMethodName, cfg, importMap, functions, converterMap)
+				totalMethods++
+			}
 		}
 	}
 
-	logger.Verbose("Generated %d MapFrom methods", totalMethods)
+	logger.Verbose("Generated %d mapper methods", totalMethods)
 	logger.Success("Code generation completed successfully")
 
 	return f, nil
@@ -80,6 +108,40 @@ func buildImportMap(sources map[string]types.SourceStruct) map[string]string {
 		}
 	}
 	return importMap
+}
+
+// buildConverterMap creates a mapping of converter functions to their inverters
+func buildConverterMap(functions map[string]types.FunctionInfo) map[string]types.ConverterInfo {
+	converterMap := make(map[string]types.ConverterInfo)
+
+	// First pass: register all converters
+	for name, fn := range functions {
+		if fn.IsConverter && !fn.IsInverter {
+			converterMap[name] = types.ConverterInfo{
+				FunctionName: name,
+				HasInverter:  false,
+			}
+		}
+	}
+
+	// Second pass: link inverters to converters
+	for name, fn := range functions {
+		if fn.IsInverter && fn.InvertsFunc != "" {
+			if info, exists := converterMap[fn.InvertsFunc]; exists {
+				info.InverterFunc = name
+				info.HasInverter = true
+				converterMap[fn.InvertsFunc] = info
+			}
+			
+			// Inverters can also be used as converters
+			converterMap[name] = types.ConverterInfo{
+				FunctionName: name,
+				HasInverter:  false,
+			}
+		}
+	}
+
+	return converterMap
 }
 
 // ParseTypeForJen converts a type string to jen.Code with proper imports

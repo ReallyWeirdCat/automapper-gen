@@ -38,6 +38,18 @@ func ParseFunctions(file *ast.File) map[string]types.FunctionInfo {
 				}
 			}
 
+			// Check for converter annotation
+			if funcDecl.Doc != nil {
+				funcInfo.IsConverter = ExtractConverterAnnotation(funcDecl.Doc)
+				
+				if invertsFunc, isInverter := ExtractInverterAnnotation(funcDecl.Doc); isInverter {
+					funcInfo.IsInverter = true
+					funcInfo.InvertsFunc = invertsFunc
+					// Inverters can also be used as converters
+					funcInfo.IsConverter = true
+				}
+			}
+
 			functions[funcInfo.Name] = funcInfo
 		}
 	}

@@ -2,10 +2,11 @@ package types
 
 // DTOMapping represents a DTO with its mapping configuration
 type DTOMapping struct {
-	Name        string
-	Sources     []string
-	Fields      []FieldInfo
-	PackageName string
+	Name            string
+	Sources         []string
+	Fields          []FieldInfo
+	PackageName     string
+	Bidirectional   bool
 }
 
 // FieldInfo contains information about a struct field
@@ -42,4 +43,14 @@ type FunctionInfo struct {
 	Name        string
 	ParamTypes  []string
 	ReturnTypes []string
+	IsConverter bool 
+	IsInverter  bool
+	InvertsFunc string
+}
+
+// ConverterInfo contains converter and its inverter information
+type ConverterInfo struct {
+	FunctionName  string
+	InverterFunc  string
+	HasInverter   bool
 }
