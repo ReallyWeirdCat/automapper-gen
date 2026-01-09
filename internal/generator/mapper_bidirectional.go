@@ -215,9 +215,7 @@ func buildMapToErrorReturningConverterMapping(
 			// *T -> dereference -> inverter -> U -> take address -> *U
 			statements = []jen.Code{
 				jen.If(jen.Id("d").Dot(dtoField.Name).Op("!=").Nil()).Block(
-					jen.Var().Id("result").Id(targetField.BaseType),
-					jen.Var().Id("err").Error(),
-					jen.List(jen.Id("result"), jen.Id("err")).Op("=").Id(inverterFunc).Call(
+					jen.List(jen.Id("result"), jen.Id("err")).Op(":=").Id(inverterFunc).Call(
 						jen.Op("*").Id("d").Dot(dtoField.Name),
 					),
 					jen.If(jen.Id("err").Op("!=").Nil()).Block(
