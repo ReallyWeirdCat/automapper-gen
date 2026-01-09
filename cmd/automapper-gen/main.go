@@ -78,13 +78,6 @@ func run(pkgPath string, startTime time.Time) error {
 		}
 	}
 
-	if len(cfg.Converters) > 0 {
-		logger.Verbose("Converters: %d", len(cfg.Converters))
-		for _, conv := range cfg.Converters {
-			logger.Debug("  - %s -> %s", conv.Name, conv.Function)
-		}
-	}
-
 	// Step 2: Parse package
 	logger.Step(currentStep, totalSteps, "Parsing Go package")
 	currentStep++

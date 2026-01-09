@@ -81,24 +81,15 @@ func (d *UserDTO) MapToUserDB(dst *db.UserDB) error {
 		v := d.About
 		dst.About = &v
 	}
-	// Pets: nested DTO mapping not supported in MapTo, skipped
+	// Pets: nested DTO mapping not implemented in MapTo, skipped
 	// FeaturedAchievement: nested DTO mapping not implemented in MapTo, skipped
 	// Interests: converter has no inverter, skipped
 	if d.Birthday != nil {
-		// FIXME: Generated output uses unimported library:
-		// var result time.Time
-		// var err error
-		// result, err = StringToTime(*d.Birthday)
-		// if err != nil {
-		// 	return fmt.Errorf("converting field Birthday: %w", err)
-		// }
-		{
-			result, err := StringToTime(*d.Birthday)
-			if err != nil {
-				return fmt.Errorf("converting field Birthday: %w", err)
-			}
-			dst.Birthday = &result
+		result, err := StringToTime(*d.Birthday)
+		if err != nil {
+			return fmt.Errorf("converting field Birthday: %w", err)
 		}
+		dst.Birthday = &result
 	}
 	// Birthday: nil pointer will result in nil
 	{

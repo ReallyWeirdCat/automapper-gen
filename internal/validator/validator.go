@@ -99,20 +99,35 @@ func (v *Validator) Validate() *ValidationResult {
 	result.Stats["total_dtos"] = len(v.dtos)
 	result.Stats["total_sources"] = len(v.sources)
 
-	// Validate converter functions exist
+	// Validate converter functions exist and have valid signatures
 	v.validateConverterFunctions(result)
 
+	// Validate inverter relationships
+	v.validateInverterRelationships(result)
+
 	totalFields := 0
+	totalBidirectional := 0
+	
 	for _, dto := range v.dtos {
 		totalFields += len(dto.Fields)
-		logger.Verbose("Validating DTO: %s (sources: %v)", dto.Name, dto.Sources)
+		if dto.Bidirectional {
+			totalBidirectional++
+		}
+		
+		logger.Verbose("Validating DTO: %s (sources: %v, bidirectional: %v)", dto.Name, dto.Sources, dto.Bidirectional)
 
 		for _, sourceName := range dto.Sources {
 			v.validateDTOMapping(dto, sourceName, result)
+			
+			// Additional validation for bidirectional mappings
+			if dto.Bidirectional {
+				v.validateBidirectionalMapping(dto, sourceName, result)
+			}
 		}
 	}
 
 	result.Stats["total_fields"] = totalFields
+	result.Stats["bidirectional_dtos"] = totalBidirectional
 	result.Stats["errors"] = len(result.Errors)
 	result.Stats["warnings"] = len(result.Warnings)
 
@@ -134,55 +149,168 @@ func (v *Validator) Validate() *ValidationResult {
 	}
 
 	logger.Stats("Validation Statistics", map[string]any{
-		"DTOs validated":   result.Stats["total_dtos"],
-		"Source structs":   result.Stats["total_sources"],
-		"Fields validated": result.Stats["total_fields"],
-		"Errors":           result.Stats["errors"],
-		"Warnings":         result.Stats["warnings"],
+		"DTOs validated":      result.Stats["total_dtos"],
+		"Bidirectional DTOs":  result.Stats["bidirectional_dtos"],
+		"Source structs":      result.Stats["total_sources"],
+		"Fields validated":    result.Stats["total_fields"],
+		"Errors":              result.Stats["errors"],
+		"Warnings":            result.Stats["warnings"],
 	})
 
 	return result
 }
 
-// validateConverterFunctions validates that all converter functions exist
+// validateConverterFunctions validates that all converter functions exist and have valid signatures
 func (v *Validator) validateConverterFunctions(result *ValidationResult) {
 	logger.Verbose("Validating converter functions...")
 
-	converterMap := make(map[string]config.ConverterDef)
-	for _, conv := range v.cfg.Converters {
-		converterMap[conv.Name] = conv
+	converterCount := 0
+	inverterCount := 0
 
-		// Check if function exists
-		fn, exists := v.functions[conv.Function]
-		if !exists {
-			result.Errors = append(result.Errors, ValidationError{
-				Message:    fmt.Sprintf("Converter function '%s' (for converter '%s') not found in package", conv.Function, conv.Name),
-				Severity:   SeverityError,
-				Suggestion: fmt.Sprintf("Add function '%s' to your package or fix the function name in automapper.json", conv.Function),
+	for _, fn := range v.functions {
+		if fn.IsConverter && !fn.IsInverter {
+			converterCount++
+			isSafe := parser.IsSafeConverterSignature(fn)
+			isErrorReturning := parser.IsErrorReturningConverterSignature(fn)
+
+			if isSafe {
+				logger.Debug("  Safe converter '%s' - func(T) U", fn.Name)
+			} else if isErrorReturning {
+				logger.Debug("  Regular converter '%s' - func(T) (U, error)", fn.Name)
+			} else {
+				// Invalid signature
+				result.Errors = append(result.Errors, ValidationError{
+					Message: fmt.Sprintf("Converter function '%s' has invalid signature, got: %d params, %d returns",
+						fn.Name, len(fn.ParamTypes), len(fn.ReturnTypes)),
+					Severity:   SeverityError,
+					Suggestion: "Change signature to either func(T) U (for safe converters) or func(T) (U, error)",
+				})
+			}
+		}
+
+		if fn.IsInverter {
+			inverterCount++
+		}
+	}
+
+	logger.Verbose("Converter functions validated: %d converters, %d inverters", converterCount, inverterCount)
+}
+
+// validateInverterRelationships validates that inverters reference valid converters
+func (v *Validator) validateInverterRelationships(result *ValidationResult) {
+	logger.Verbose("Validating inverter relationships...")
+
+	for _, fn := range v.functions {
+		if fn.IsInverter && fn.InvertsFunc != "" {
+			// Check if the referenced converter exists
+			converterFn, exists := v.functions[fn.InvertsFunc]
+			if !exists {
+				result.Errors = append(result.Errors, ValidationError{
+					Message:    fmt.Sprintf("Inverter '%s' references non-existent converter '%s'", fn.Name, fn.InvertsFunc),
+					Severity:   SeverityError,
+					Suggestion: fmt.Sprintf("Ensure converter function '%s' exists and is annotated with //automapper:converter", fn.InvertsFunc),
+				})
+				continue
+			}
+
+			// Check if the referenced function is actually a converter
+			if !converterFn.IsConverter {
+				result.Errors = append(result.Errors, ValidationError{
+					Message:    fmt.Sprintf("Inverter '%s' references '%s' which is not marked as a converter", fn.Name, fn.InvertsFunc),
+					Severity:   SeverityError,
+					Suggestion: fmt.Sprintf("Add //automapper:converter annotation to function '%s'", fn.InvertsFunc),
+				})
+			}
+
+			// Validate inverter signature
+			isSafe := parser.IsSafeConverterSignature(fn)
+			isErrorReturning := parser.IsErrorReturningConverterSignature(fn)
+
+			if !isSafe && !isErrorReturning {
+				result.Errors = append(result.Errors, ValidationError{
+					Message: fmt.Sprintf("Inverter function '%s' has invalid signature, got: %d params, %d returns",
+						fn.Name, len(fn.ParamTypes), len(fn.ReturnTypes)),
+					Severity:   SeverityError,
+					Suggestion: "Change signature to either func(T) U or func(T) (U, error)",
+				})
+			}
+
+			logger.Debug("  Inverter '%s' -> Converter '%s'", fn.Name, fn.InvertsFunc)
+		}
+	}
+}
+
+// validateBidirectionalMapping performs additional validation for bidirectional DTOs
+func (v *Validator) validateBidirectionalMapping(dto types.DTOMapping, sourceName string, result *ValidationResult) {
+	_, exists := v.sources[sourceName]
+	if !exists {
+		return // Already validated in validateDTOMapping
+	}
+
+	logger.Debug("Validating bidirectional mapping: %s <-> %s", dto.Name, sourceName)
+
+	for _, field := range dto.Fields {
+		if field.Ignore {
+			continue
+		}
+
+		// Check for nested DTOs - not supported in MapTo yet
+		if field.NestedDTO != "" {
+			result.Warnings = append(result.Warnings, ValidationError{
+				DTO:      dto.Name,
+				Source:   sourceName,
+				Field:    field.Name,
+				Message:  "Nested DTO fields are not supported in MapTo and will be skipped",
+				Severity: SeverityWarning,
+				Suggestion: "Consider flattening the structure or waiting for nested DTO support in MapTo",
 			})
 			continue
 		}
 
-		// Validate function signature and automatically detect type
-		isSafe := parser.IsSafeConverterSignature(fn)
-		isErrorReturning := parser.IsErrorReturningConverterSignature(fn)
+		// Check for converters without inverters
+		if field.ConverterTag != "" {
+			converterFn, fnExists := v.functions[field.ConverterTag]
+			if !fnExists {
+				// Already reported in validateConverterFunctions
+				continue
+			}
 
-		if isSafe {
-			logger.Debug("  Safe converter '%s' (%s) - func(T) U", conv.Name, conv.Function)
-		} else if isErrorReturning {
-			logger.Debug("  Regular converter '%s' (%s) - func(T) (U, error)", conv.Name, conv.Function)
-		} else {
-			// Invalid signature
-			result.Errors = append(result.Errors, ValidationError{
-				Message: fmt.Sprintf("Converter function '%s' has invalid signature, got: %d params, %d returns)",
-					conv.Function, len(fn.ParamTypes), len(fn.ReturnTypes)),
-				Severity:   SeverityError,
-				Suggestion: "Change signature to either func(T) U (for safe converters) or func(T) (U, error)",
-			})
+			// Check if this converter has an inverter
+			hasInverter := false
+			for _, fn := range v.functions {
+				if fn.IsInverter && fn.InvertsFunc == field.ConverterTag {
+					hasInverter = true
+					break
+				}
+			}
+
+			if !hasInverter {
+				result.Warnings = append(result.Warnings, ValidationError{
+					DTO:      dto.Name,
+					Source:   sourceName,
+					Field:    field.Name,
+					Message:  fmt.Sprintf("Converter '%s' has no inverter, field will be skipped in MapTo", field.ConverterTag),
+					Severity: SeverityWarning,
+					Fixable:  true,
+					Suggestion: fmt.Sprintf("Add an inverter function with //automapper:inverter=%s annotation", field.ConverterTag),
+				})
+			} else {
+				logger.Debug("  Field %s: converter '%s' has inverter (bidirectional OK)", field.Name, field.ConverterTag)
+			}
+
+			// Additional check: ensure converter is marked as such
+			if !converterFn.IsConverter {
+				result.Errors = append(result.Errors, ValidationError{
+					DTO:        dto.Name,
+					Source:     sourceName,
+					Field:      field.Name,
+					Message:    fmt.Sprintf("Function '%s' used as converter but not marked with //automapper:converter", field.ConverterTag),
+					Severity:   SeverityError,
+					Suggestion: fmt.Sprintf("Add //automapper:converter annotation to function '%s'", field.ConverterTag),
+				})
+			}
 		}
 	}
-
-	logger.Verbose("Converter functions validated: %d", len(v.cfg.Converters))
 }
 
 // validateDTOMapping validates a single DTO to source mapping
@@ -195,7 +323,7 @@ func (v *Validator) validateDTOMapping(
 			DTO:        dto.Name,
 			Source:     sourceName,
 			Message:    "Source struct not found",
-			Severity:   SeverityWarning,
+			Severity:   SeverityError,
 			Suggestion: fmt.Sprintf("Ensure %s is defined in the package or included in external packages", sourceName),
 		})
 		return
@@ -331,33 +459,40 @@ func (v *Validator) validateConverter(
 ) {
 	converterName := field.ConverterTag
 
-	// Check if converter exists in config
-	found := false
-	for _, conv := range v.cfg.Converters {
-		if conv.Name == converterName {
-			found = true
-			logger.Debug("    OK: Using registered converter: %s", converterName)
-			break
-		}
-	}
-
-	if !found {
+	// Check if converter function exists
+	fn, fnExists := v.functions[converterName]
+	if !fnExists {
 		result.Errors = append(result.Errors, ValidationError{
 			DTO:        dto.Name,
 			Source:     sourceName,
 			Field:      field.Name,
-			Message:    fmt.Sprintf("Converter '%s' not found in converters", converterName),
+			Message:    fmt.Sprintf("Converter function '%s' not found", converterName),
 			Severity:   SeverityError,
-			Suggestion: "Add converter to automapper.json converters list",
+			Suggestion: fmt.Sprintf("Add function '%s' with //automapper:converter annotation", converterName),
 		})
 		return
 	}
+
+	// Ensure function is marked as converter
+	if !fn.IsConverter {
+		result.Errors = append(result.Errors, ValidationError{
+			DTO:        dto.Name,
+			Source:     sourceName,
+			Field:      field.Name,
+			Message:    fmt.Sprintf("Function '%s' used as converter but not marked with //automapper:converter", converterName),
+			Severity:   SeverityError,
+			Suggestion: fmt.Sprintf("Add //automapper:converter annotation to function '%s'", converterName),
+		})
+		return
+	}
+
+	logger.Debug("    OK: Using converter function: %s", converterName)
 
 	// Validate that types are compatible for conversion
 	srcBaseType := extractBaseType(sourceField.Type)
 	dstBaseType := extractBaseType(field.Type)
 
-	// Warn if types are identical
+	// Warn if types are identical (converter might be unnecessary)
 	if srcBaseType == dstBaseType {
 		result.Warnings = append(result.Warnings, ValidationError{
 			DTO:        dto.Name,
